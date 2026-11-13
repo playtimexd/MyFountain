@@ -147,8 +147,15 @@ def pid_on_port(port: int) -> int | None:
 
 def pid_alive(pid: int) -> bool:
     if os.name == "nt":
-        r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, **NOWIN)
-        return str(pid) in r.stdout
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, int(pid))            # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
+        k32.CloseHandle(h)
+        return bool(ok) and code.value == 259                    # STILL_ACTIVE
     try:
         os.kill(pid, 0)
         return True

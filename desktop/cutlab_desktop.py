@@ -239,6 +239,7 @@ class App:
             u["error"] = str(e)
             st.log(f"Update failed: {e}")
         finally:
+            self._version = (0.0, "")
             relaunch = bool(u.get("ok") and (u.get("result") or {}).get("launcher"))
             try:
                 if relaunch:
@@ -320,12 +321,25 @@ class App:
         if p:
             os.startfile(str(p))                                                  # noqa: S606 - explorer on our folders
 
+    _version: tuple[float, str] = (0.0, "")
+
+    def version(self) -> str:
+        """git describe, cached for 15 s (the pages poll /api/state twice a second)."""
+        t, v = self._version
+        if time.time() - t > 15:
+            try:
+                v = updater.git("describe", "--always", "--dirty", check=False, timeout=10)
+            except Exception:
+                pass
+            self._version = (time.time(), v)
+        return v
+
     def info(self) -> dict:
-        st = self.state
+        st, version = self.state, self.version()
         with st.lock:
             return {"phase": st.phase, "message": st.message, "detail": st.detail, "lines": list(st.lines)[-80:],
                     "engine_url": self.engine.base, "owned": self.engine.owned, "data_dir": str(self.data),
-                    "root": str(ROOT), "mode": self.mode, "version": updater.git("describe", "--always", "--dirty", check=False),
+                    "root": str(ROOT), "mode": self.mode, "version": version,
                     "config_path": str(updater.config_path()), "update": dict(st.update, lines=st.update["lines"][-400:])}
 
 
