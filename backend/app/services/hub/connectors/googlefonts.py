@@ -89,7 +89,8 @@ class GoogleFonts(Connector):
         return self.candidate(source_id=f"{lic_dir}/{fam_dir}", kind="font", name=fam, tags=[t for t in ["font", (category or "").lower()] if t],
                               source_url=f"https://fonts.google.com/specimen/{quote(fam.replace(' ', '+'), safe='+')}" if family else
                               f"https://github.com/google/fonts/tree/main/{lic_dir}/{fam_dir}",
-                              author=None, license=DIR_LICENSE[lic_dir], formats=["ttf"], extra=extra or {})
+                              author=None, license=DIR_LICENSE[lic_dir], formats=["ttf"],
+                              extra={**({"category": category.lower()} if category else {}), **(extra or {})})
 
     def search(self, query: str, kind: str | None = None, page: int = 1) -> dict:
         if kind and kind != "font":
@@ -119,7 +120,7 @@ class GoogleFonts(Connector):
         if lic_dir not in DIR_LICENSE:
             raise ConnectorError("Unknown font folder")
         md = self._metadata(source_id)
-        c = self._cand(lic_dir, fam_dir, md.get("name"), (md.get("category") or "").replace("_", " ").lower() if isinstance(md.get("category"), str) else None)
+        c = self._cand(lic_dir, fam_dir, md.get("name"), font_category(md))
         c["author"] = md.get("designer") if isinstance(md.get("designer"), str) else None
         c["extra"]["metadata"] = md
         return c
@@ -148,3 +149,32 @@ class GoogleFonts(Connector):
             except Exception:
                 continue
         return Downloaded(files=out, updates={"author": cand.get("author")})
+
+
+def font_category(md: dict) -> str | None:
+    """'SANS_SERIF' / ['DISPLAY', ...] in METADATA.pb -> 'sans serif' / 'display'."""
+    cat = md.get("category")
+    if isinstance(cat, list):
+        cat = cat[0] if cat else None
+    return cat.replace("_", " ").lower() if isinstance(cat, str) and cat else None
+
+
+def backfill_categories(progress=lambda p, m: None) -> dict:
+    """Give hub fonts imported without a design category one, from their METADATA.pb (tiny text files)."""
+    from .. import db
+    rows = [a for a in db.search({"source": "googlefonts"}, page=1, page_size=5000)["items"]]
+    done = 0
+    con = GoogleFonts()
+    for i, a in enumerate(rows):
+        full = db.get(a["id"]) or {}
+        if (full.get("extra") or {}).get("category"):
+            continue
+        progress(i / max(1, len(rows)), a["name"])
+        try:
+            cat = font_category(con._metadata(a["source_id"]))
+        except Exception:
+            continue
+        if cat:
+            db.merge_extra(a["id"], {"category": cat})
+            done += 1
+    return {"fonts": len(rows), "updated": done}

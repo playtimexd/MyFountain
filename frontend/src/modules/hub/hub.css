@@ -2,7 +2,7 @@
 .hub-top { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .hub-body { flex: 1; min-height: 0; display: flex; }
 .hub-scroll { flex: 1; min-width: 0; overflow: auto; padding: 12px 16px; }
-.hub-side { width: 220px; flex-shrink: 0; border-right: 1px solid var(--line); overflow: auto; padding: 12px; }
+.hub-side { width: 248px; flex-shrink: 0; border-right: 1px solid var(--line); overflow: auto; padding: 12px; }
 .hub-side h4 { margin: 12px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); font-weight: 600; }
 .hub-side h4:first-child { margin-top: 0; }
 .facet { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-dim); font-size: 12px; }
@@ -56,4 +56,16 @@
 .hub-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--line-2); padding: 8px 14px; border-radius: 8px; z-index: 2000; font-size: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.5); max-width: 80vw; }
 .hub-sentinel { height: 40px; display: flex; align-items: center; justify-content: center; color: var(--text-faint); font-size: 12px; }
 .hub-selbar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--line); font-size: 12px; flex-wrap: wrap; }
+.facet .cat-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-tree { display: flex; flex-direction: column; gap: 1px; }
+.cat-row { gap: 4px; }
+.cat-row .cat-twisty { width: 14px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--text-faint); }
+.cat-row .cat-twisty:hover { color: var(--text); }
+.cat-row .cat-icon { flex-shrink: 0; color: var(--text-faint); }
+.cat-row.on .cat-icon { color: var(--accent-text, var(--accent)); }
+.hub-crumbs { display: flex; align-items: center; gap: 4px; padding: 8px 16px 0; font-size: 12px; flex-wrap: wrap; }
+.hub-crumbs .crumb { cursor: pointer; color: var(--text-dim); padding: 2px 4px; border-radius: var(--radius-sm); }
+.hub-crumbs .crumb:hover { background: var(--bg-2); color: var(--text); }
+.hub-crumbs .crumb.on { color: var(--text); font-weight: 600; }
+.hub-crumbs .hub-pill { font-size: 11px; padding: 2px 8px; }
 @media (max-width: 900px) { .hub-side { display: none; } .hub-detail { grid-template-columns: 1fr; } .hub-progress-src { grid-template-columns: 1fr; } }

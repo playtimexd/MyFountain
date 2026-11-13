@@ -14,9 +14,36 @@ export interface HubAsset {
   commercial_ok: boolean; modifiable: boolean; stats: Record<string, any>; thumb?: string | null; thumb_url?: string | null
   media_id?: string | null; formats: string[]; rigged: boolean; animated: boolean; total_bytes: number
   has_embedding: boolean; has_clip: boolean; created: number; updated: number; files?: HubFile[]; score?: number
-  license_info?: LicenseInfo
+  license_info?: LicenseInfo; category?: string; collection?: string
 }
-export interface Facets { kind: Record<string, number>; source: Record<string, number>; license: Record<string, number>; format: Record<string, number>; rigged: number; animated: number }
+export interface Facets {
+  kind: Record<string, number>; source: Record<string, number>; license: Record<string, number>; format: Record<string, number>
+  category?: Record<string, number>; collection?: Record<string, number>; rigged: number; animated: number
+}
+/** Library category tree node (backend: services/hub/categories.py). `count` includes descendants. */
+export interface CategoryNode { id: string; label: string; count: number; own: number; children: CategoryNode[] }
+
+/** Roll per-path counts up to every ancestor: {'audio/sfx/ui': 3} -> audio 3, audio/sfx 3, audio/sfx/ui 3. */
+export function rollUp(counts: Record<string, number> | undefined): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [p, n] of Object.entries(counts ?? {})) {
+    const parts = p.split('/')
+    for (let i = 1; i <= parts.length; i++) { const k = parts.slice(0, i).join('/'); out[k] = (out[k] ?? 0) + n }
+  }
+  return out
+}
+
+export function categoryTrail(tree: CategoryNode[], id: string): CategoryNode[] {
+  for (const n of tree) {
+    if (n.id === id) return [n]
+    if (id.startsWith(n.id + '/')) { const sub = categoryTrail(n.children, id); if (sub.length) return [n, ...sub] }
+  }
+  return []
+}
+
+export function flatCategories(tree: CategoryNode[], depth = 0): { node: CategoryNode; depth: number }[] {
+  return tree.flatMap((n) => [{ node: n, depth }, ...flatCategories(n.children, depth + 1)])
+}
 export interface AssetPage { items: HubAsset[]; total: number; page: number; page_size: number; has_more: boolean; facets: Facets }
 export interface Candidate {
   source: string; source_id: string; kind: HubKind; name: string; description: string; tags: string[]; source_url?: string | null
@@ -32,7 +59,7 @@ export interface SourceInfo {
 export interface LicenseInfo { id: string; label: string; url: string; commercial_ok: boolean; modifiable: boolean; attribution_required: boolean; class: LicenseClass }
 export interface HubStats {
   total: number; bytes: number; by_kind: Record<string, number>; by_source: Record<string, number>; by_license: Record<string, number>
-  by_license_class: Record<string, number>; with_text_embedding: number; with_clip: number; in_media_library: number; rigged: number; animated: number
+  by_license_class: Record<string, number>; by_category?: Record<string, number>; by_collection?: Record<string, number>; with_text_embedding: number; with_clip: number; in_media_library: number; rigged: number; animated: number
 }
 export interface HarvestSource { cursor: number[]; added: number; exists: number; duplicates: number; skipped: number; errors: number; bytes: number; done: boolean; note: string; quota: number }
 export interface HarvestState {

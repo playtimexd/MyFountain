@@ -1,17 +1,25 @@
 import { useEffect, useState } from 'react'
 import { Clapperboard, Copy, ExternalLink, Image as ImageIcon, Send, Trash2, X } from 'lucide-react'
 import { api, fmtSize } from '../../api/client'
-import type { HubAsset } from './api'
-import { AUDIO_KINDS, hubFile } from './api'
+import type { CategoryNode, HubAsset } from './api'
+import { AUDIO_KINDS, flatCategories, hubFile } from './api'
 import { Badges, KindIcon, toast, useAssetActions } from './common'
 
-export default function AssetDetail({ id, sourceNames, onClose, onDeleted, onTag, kindLabel }: {
+export default function AssetDetail({ id, sourceNames, onClose, onDeleted, onTag, kindLabel, onChanged }: {
   id: string; sourceNames: Record<string, string>; onClose: () => void; onDeleted: () => void; onTag: (t: string) => void; kindLabel: (k: string) => string
+  onChanged?: () => void
 }) {
   const [a, setA] = useState<HubAsset | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const act = useAssetActions()
+  const [cats, setCats] = useState<CategoryNode[]>([])
   useEffect(() => { api.get<HubAsset>(`/api/hub/assets/${id}`).then(setA).catch((e) => setErr(e.message)) }, [id])
+  useEffect(() => { api.get<{ tree: CategoryNode[] }>('/api/hub/categories').then((r) => setCats(r.tree)).catch(() => {}) }, [])
+  const setCategory = async (category: string) => {
+    if (!a) return
+    try { setA(await api.put<HubAsset>(`/api/hub/assets/${a.id}/category`, { category: category || null })); toast(category ? 'Category set' : 'Category reset to automatic'); onChanged?.() } catch (e: any) { toast(e.message) }
+  }
+  const manualCat = (a as any)?.extra?.category_manual as string | undefined
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k) }, [onClose])
 
   const del = async () => {
@@ -53,6 +61,14 @@ export default function AssetDetail({ id, sourceNames, onClose, onDeleted, onTag
                 <Badges kind={a.kind} license={a.license} cls={a.license_class} rigged={a.rigged} animated={a.animated} clips={st.clips?.length} />
                 {a.description && <p className="muted" style={{ fontSize: 12, userSelect: 'text' }}>{a.description}</p>}
                 <div className="hub-kv" style={{ margin: '10px 0' }}>
+                  <span>Category</span><span className="row" style={{ gap: 6 }}>
+                    <select className="select" style={{ height: 24, fontSize: 12, maxWidth: 260 }} value={a.category ?? ''} onChange={(e) => setCategory(e.target.value)}
+                      title="Library folder. Picking one pins it; 'Automatic' lets the rules decide again.">
+                      {flatCategories(cats).map(({ node, depth }) => <option key={node.id} value={node.id}>{'  '.repeat(depth)}{node.label}</option>)}
+                    </select>
+                    {manualCat ? <button className="btn sm ghost" onClick={() => setCategory('')} title="Let the automatic rules choose the folder again">Automatic</button> : <span className="faint">auto</span>}
+                  </span>
+                  {a.collection ? <><span>Collection</span><span>{a.collection}</span></> : null}
                   <span>Source</span><span>{sourceNames[a.source] ?? a.source}{a.source_url && <> · <a href={a.source_url} target="_blank" rel="noreferrer">open page <ExternalLink size={10} /></a></>}</span>
                   <span>Author</span><span>{a.author_url ? <a href={a.author_url} target="_blank" rel="noreferrer">{a.author || a.author_url}</a> : a.author || '—'}</span>
                   <span>Licence</span><span>{li?.label ?? a.license}{a.license_url && <> · <a href={a.license_url} target="_blank" rel="noreferrer">terms</a></>}</span>
@@ -69,6 +85,8 @@ export default function AssetDetail({ id, sourceNames, onClose, onDeleted, onTag
                   {st.units ? <><span>Units</span><span>{st.units}</span></> : null}
                   {st.auto_tags?.length ? <><span>Auto tags</span><span>{st.auto_tags.join(', ')} <span className="faint">(CLIP)</span></span></> : null}
                 </div>
+                {(a as any).extra?.third_party_credit && <div className="ui-callout warn" style={{ fontSize: 12, marginBottom: 8 }}>
+                  Credited to {a.author || 'a third party'}, not NASA - this may be third-party material with its own copyright. Check the source page before using it.</div>}
                 <div className="faint" style={{ fontSize: 11, marginBottom: 4 }}>Attribution (ready to paste)</div>
                 <div className="hub-attr">{a.attribution}</div>
                 {a.tags.length > 0 && <div className="hub-pill-row" style={{ marginTop: 10 }}>{a.tags.slice(0, 30).map((t) => <button key={t} className="hub-pill" onClick={() => onTag(t)}>{t}</button>)}</div>}

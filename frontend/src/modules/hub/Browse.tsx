@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Search, Send, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronRight, Search, Send, Trash2, X } from 'lucide-react'
 import { api, fmtSize } from '../../api/client'
 import { Empty } from '../../shared/ui'
-import type { AssetPage, Facets, HubAsset } from './api'
-import { KINDS, LICENSE_CLASSES, kindLabel } from './api'
+import type { AssetPage, CategoryNode, Facets, HubAsset } from './api'
+import { KINDS, LICENSE_CLASSES, categoryTrail, kindLabel, rollUp } from './api'
+import CategoryTree from './CategoryTree'
 import { Badges, Thumb, audioUrl, toast, useAssetActions } from './common'
 import AssetDetail from './AssetDetail'
 
-interface Filters { q: string; kind: string; source: string; license: string; format: string; rigged: boolean; animated: boolean; sort: string }
-const EMPTY: Filters = { q: '', kind: '', source: '', license: '', format: '', rigged: false, animated: false, sort: '' }
+interface Filters { q: string; category: string; collection: string; kind: string; source: string; license: string; format: string; rigged: boolean; animated: boolean; sort: string }
+const EMPTY: Filters = { q: '', category: '', collection: '', kind: '', source: '', license: '', format: '', rigged: false, animated: false, sort: '' }
+const CAT_KEY = 'cutlab.hub.category'
+const initialFilters = (): Filters => { try { return { ...EMPTY, category: localStorage.getItem(CAT_KEY) || '' } } catch { return EMPTY } }
 
 export default function Browse({ sourceNames, onCredits, refreshKey }: { sourceNames: Record<string, string>; onCredits: (ids: string[]) => void; refreshKey: number }) {
-  const [f, setF] = useState<Filters>(EMPTY)
+  const [f, setF] = useState<Filters>(initialFilters)
+  const [tree, setTree] = useState<CategoryNode[]>([])
+  const [allCols, setAllCols] = useState(false)
   const [qInput, setQInput] = useState('')
   const [items, setItems] = useState<HubAsset[]>([])
   const [facets, setFacets] = useState<Facets | null>(null)
@@ -40,6 +45,11 @@ export default function Browse({ sourceNames, onCredits, refreshKey }: { sourceN
   }, [])
 
   useEffect(() => { load(1, f) }, [f, load, refreshKey])
+  useEffect(() => { api.get<{ tree: CategoryNode[] }>('/api/hub/categories').then((r) => setTree(r.tree)).catch(() => {}) }, [refreshKey])
+  useEffect(() => { try { localStorage.setItem(CAT_KEY, f.category) } catch { /* ignore */ } }, [f.category])
+  const catCounts = useMemo(() => rollUp(facets?.category), [facets])
+  const catTotal = useMemo(() => Object.values(facets?.category ?? {}).reduce((a, b) => a + b, 0), [facets])
+  const trail = useMemo(() => (f.category ? categoryTrail(tree, f.category) : []), [tree, f.category])
   useEffect(() => { const t = setTimeout(() => setF((o) => (o.q === qInput ? o : { ...o, q: qInput })), 350); return () => clearTimeout(t) }, [qInput])
 
   useEffect(() => {
@@ -58,17 +68,20 @@ export default function Browse({ sourceNames, onCredits, refreshKey }: { sourceN
     setSel(new Set()); load(1, f); toast('Deleted')
   }
 
-  const facet = (title: string, key: 'kind' | 'source' | 'license' | 'format', entries: [string, string][]) => {
+  const facet = (title: string, key: 'kind' | 'source' | 'license' | 'format' | 'collection', entries: [string, string][], limit = 0) => {
     const counts = (facets?.[key] ?? {}) as Record<string, number>
-    const rows = entries.filter(([id]) => counts[id] || f[key] === id)
+    let rows = entries.filter(([id]) => counts[id] || f[key] === id)
     if (!rows.length) return null
+    const more = limit > 0 && rows.length > limit && !allCols
+    if (more) rows = rows.filter(([id], i) => i < limit || f[key] === id)
     return (
       <>
         <h4>{title}</h4>
         {rows.map(([id, label]) => (
           <div key={id} className={`facet${f[key] === id ? ' on' : ''}`} onClick={() => set({ [key]: f[key] === id ? '' : id } as Partial<Filters>)}>
-            {label}<span className="n">{counts[id] ?? 0}</span>
+            <span className="cat-label" title={label}>{label}</span><span className="n">{(counts[id] ?? 0).toLocaleString()}</span>
           </div>))}
+        {limit > 0 && entries.filter(([id]) => counts[id]).length > limit && <button className="btn sm ghost link" style={{ marginTop: 2 }} onClick={() => setAllCols((v) => !v)}>{more ? 'Show all' : 'Show fewer'}</button>}
       </>
     )
   }
@@ -76,6 +89,9 @@ export default function Browse({ sourceNames, onCredits, refreshKey }: { sourceN
   return (
     <div className="hub-body">
       <aside className="hub-side">
+        <h4>Categories</h4>
+        <CategoryTree tree={tree} counts={catCounts} total={catTotal} value={f.category} onChange={(category) => set({ category })} />
+        {facet('Collection', 'collection', Object.entries(facets?.collection ?? {}).sort((a, b) => b[1] - a[1]).map(([c]) => [c, c]), 8)}
         {facet('Kind', 'kind', KINDS.map((k) => [k.id, k.label]))}
         {facet('Licence', 'license', LICENSE_CLASSES.map((l) => [l.id, l.label]))}
         <h4>Rig / motion</h4>
@@ -83,9 +99,21 @@ export default function Browse({ sourceNames, onCredits, refreshKey }: { sourceN
         <div className={`facet${f.animated ? ' on' : ''}`} onClick={() => set({ animated: !f.animated })}>Animated<span className="n">{facets?.animated ?? 0}</span></div>
         {facet('Source', 'source', Object.keys(facets?.source ?? {}).map((s) => [s, sourceNames[s] ?? s]))}
         {facet('Format', 'format', Object.keys(facets?.format ?? {}).sort().map((s) => [s, s.toUpperCase()]))}
-        {JSON.stringify({ ...f, q: '' }) !== JSON.stringify({ ...EMPTY }) && <button className="btn sm ghost" style={{ marginTop: 10 }} onClick={() => setF({ ...EMPTY, q: f.q })}><X size={12} />Clear filters</button>}
+        {JSON.stringify({ ...f, q: '', sort: '' }) !== JSON.stringify({ ...EMPTY }) && <button className="btn sm ghost" style={{ marginTop: 10 }} onClick={() => setF({ ...EMPTY, q: f.q })}><X size={12} />Clear filters</button>}
       </aside>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        {trail.length > 0 && (
+          <div className="hub-crumbs">
+            <span className="crumb" onClick={() => set({ category: '' })}>All assets</span>
+            {trail.map((n) => <span key={n.id} className="row" style={{ gap: 4 }}><ChevronRight size={12} className="faint" />
+              <span className={`crumb${n.id === f.category ? ' on' : ''}`} onClick={() => set({ category: n.id })}>{n.label}</span></span>)}
+            {(trail[trail.length - 1]?.children ?? []).filter((c) => (catCounts[c.id] ?? 0) > 0).length > 0 && <span className="grow" />}
+            <span className="hub-pill-row">
+              {(trail[trail.length - 1]?.children ?? []).filter((c) => (catCounts[c.id] ?? 0) > 0).map((c) =>
+                <button key={c.id} className="hub-pill" onClick={() => set({ category: c.id })}>{c.label} <span className="faint">{catCounts[c.id]}</span></button>)}
+            </span>
+          </div>
+        )}
         <div className="hub-bar">
           <Search size={14} className="faint" />
           <input className="input" style={{ flex: 1, minWidth: 180 }} placeholder="Search the hub (keywords + semantic: e.g. 'mossy stone wall', 'zombie walk')" value={qInput} onChange={(e) => setQInput(e.target.value)} />
@@ -107,13 +135,13 @@ export default function Browse({ sourceNames, onCredits, refreshKey }: { sourceN
         <div className="hub-scroll">
           {err && <div className="err">{err}</div>}
           {!loading && items.length === 0 && !err && (
-            <Empty>{f.q || f.kind || f.source || f.license ? 'Nothing matches these filters.' : 'The hub is empty. Use Online search to add assets, run a Harvest, or Import a pack you downloaded.'}</Empty>
+            <Empty>{f.q || f.kind || f.source || f.license || f.category || f.collection ? 'Nothing matches these filters.' : 'The hub is empty. Use Online search to add assets, run a Harvest, or Import a pack you downloaded.'}</Empty>
           )}
           <div className="hub-grid">
             {items.map((a) => (
               <div key={a.id} className={`hub-card${sel.has(a.id) ? ' sel' : ''}`} onClick={(e) => (e.ctrlKey || e.metaKey || e.shiftKey ? toggle(a.id) : setOpen(a.id))}>
                 <div className={`check${sel.has(a.id) ? ' on' : ''}`} onClick={(e) => { e.stopPropagation(); toggle(a.id) }} title="Select">{sel.has(a.id) && <Check size={12} />}</div>
-                <span className="src">{sourceNames[a.source] ?? a.source}</span>
+                <span className="src" title={a.collection || undefined}>{a.collection && a.source === 'local' ? a.collection : sourceNames[a.source] ?? a.source}</span>
                 <Thumb src={a.thumb_url} kind={a.kind} audio={audioUrl(a)} cover={a.kind === 'material' || a.kind === 'hdri'} />
                 <div className="meta">
                   <div className="name" title={a.name}>{a.name}</div>
@@ -130,7 +158,7 @@ export default function Browse({ sourceNames, onCredits, refreshKey }: { sourceN
         </div>
       </div>
       {open && <AssetDetail id={open} sourceNames={sourceNames} onClose={() => setOpen(null)} onDeleted={() => { setOpen(null); load(1, f) }}
-        onTag={(t) => { setOpen(null); setQInput(t) }} kindLabel={kindLabel} />}
+        onTag={(t) => { setOpen(null); setQInput(t) }} kindLabel={kindLabel} onChanged={() => load(1, f)} />}
     </div>
   )
 }

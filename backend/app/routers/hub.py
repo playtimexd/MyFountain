@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..jobs import jobs
-from ..services.hub import ai, db, engine, harvest, imports, licenses, paths, pipeline
+from ..services.hub import ai, categories, db, engine, harvest, imports, licenses, paths, pipeline
 from ..services.hub.connectors import REGISTRY, ConnectorError, NeedsKey
 from ..services.hub.credits import credits_md
 from ..services.hub.net import HubHTTPError
@@ -75,14 +75,60 @@ def _qvec(q: str):
 
 @router.get("/assets")
 def list_assets(q: str = "", kind: str = "", source: str = "", license: str = "", rigged: bool = False, animated: bool = False,
-                format: str = "", page: int = 1, page_size: int = 48, sort: str = "", vector: bool = True):
-    f = {"q": q, "kind": kind, "source": source, "license": license, "rigged": rigged, "animated": animated, "format": format, "sort": sort}
+                format: str = "", page: int = 1, page_size: int = 48, sort: str = "", vector: bool = True,
+                category: str = "", collection: str = ""):
+    f = {"q": q, "kind": kind, "source": source, "license": license, "rigged": rigged, "animated": animated, "format": format, "sort": sort,
+         "category": category, "collection": collection}
     tv = cv = None
     if q.strip() and vector:
         st = db.stats()
         if st["with_text_embedding"] or st["with_clip"]:
             tv, cv = _qvec(q.strip().lower())
     return db.search(f, page=page, page_size=page_size, text_vec=tv, clip_vec=cv)
+
+
+@router.get("/categories")
+def category_tree(kind: str = "", source: str = "", license: str = "", collection: str = ""):
+    """The library category tree (English labels) with asset counts rolled up to parent folders."""
+    counts = db.category_counts({"kind": kind, "source": source, "license": license, "collection": collection})
+    return {"tree": categories.tree(counts), "total": sum(counts.values())}
+
+
+class RecatIn(BaseModel):
+    only_missing: bool = False
+    clean_tags: bool = True
+
+
+@router.post("/recategorize")
+def recategorize(body: RecatIn):
+    cleaned = db.clean_auto_tags() if body.clean_tags else 0
+    res = db.recategorize(only_missing=body.only_missing)
+    return {**res, "cleaned_tags": cleaned, "by_category": db.stats()["by_category"]}
+
+
+@router.post("/fonts/categories")
+def font_categories():
+    """Fill missing Google Fonts design categories (sans / serif / display…) from METADATA.pb."""
+    from ..services.hub.connectors.googlefonts import backfill_categories
+
+    def work(ctx):
+        return backfill_categories(lambda p, m: ctx.progress(p, m))
+    return jobs.submit("hub.fontcats", "Font categories", work).public()
+
+
+class CategoryIn(BaseModel):
+    category: str | None = None
+
+
+@router.put("/assets/{aid}/category")
+def put_category(aid: str, body: CategoryIn):
+    try:
+        a = db.set_category(aid, body.category or None)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not a:
+        raise HTTPException(404, "Asset not found")
+    return a
 
 
 @router.get("/assets/{aid}")
@@ -134,7 +180,7 @@ def online(source: str, q: str = "", kind: str = "", page: int = 1, policy: str 
     if not con:
         raise HTTPException(404, f"Unknown source {source}")
     try:
-        kw = {"policy": policy} if source in ("freesound", "sketchfab") else {}
+        kw = {"policy": policy} if source in ("freesound", "sketchfab", "openverse") else {}
         res = con.search(q, kind or None, page, **kw)
     except Exception as e:  # noqa: BLE001
         raise _err(e) from None
@@ -191,6 +237,7 @@ class HarvestIn(BaseModel):
     max_gb: float = 2.0
     license_policy: str = "commercial"
     variants: dict = {"texture_res": "1k"}
+    per_query: int = 0
 
 
 def _start_harvest(st: dict) -> dict:
@@ -217,6 +264,40 @@ def harvest_state(hid: str):
     if not st:
         raise HTTPException(404, "Harvest not found")
     return st
+
+
+class ChainIn(BaseModel):
+    ids: list[str]
+
+
+@router.post("/harvest/chain")
+def chain_harvests(body: ChainIn):
+    """Run several saved harvests one after another inside ONE job, so a big fill-up occupies a single worker
+    of the shared job pool instead of starving other modules' jobs. Each harvest keeps its own state/resume."""
+    ids = [h for h in dict.fromkeys(body.ids) if harvest.load(h)]
+    if not ids:
+        raise HTTPException(404, "No such harvests")
+
+    def work(ctx):
+        out = {}
+        for i, hid in enumerate(ids):
+            ctx.check()
+            try:
+                st = harvest.prepare_resume(hid)
+            except Exception as e:  # noqa: BLE001
+                out[hid] = f"skipped: {e}"
+                continue
+            ctx.progress(i / len(ids), f"Harvest {i + 1}/{len(ids)}: {', '.join(st['params']['sources'])}")
+            try:
+                res = harvest.run(st, ctx)
+                out[hid] = res.get("totals")
+            except Exception as e:  # noqa: BLE001
+                from ..jobs import JobCancelled
+                if isinstance(e, JobCancelled):
+                    raise
+                out[hid] = f"error: {e}"
+        return out
+    return jobs.submit("hub.harvest", f"Harvest chain ({len(ids)})", work).public()
 
 
 @router.post("/harvest/{hid}/resume")

@@ -13,7 +13,7 @@ const AnimLibraryTab = lazy(() => import('./AnimLibraryTab'))
 const ModelsLibraryTab = lazy(() => import('./ModelsLibraryTab'))
 
 type Sub = 'history' | 'mine' | 'anim' | 'models' | 'hub' | 'builtin' | 'stock' | 'search'
-const SUBS: readonly (readonly [Sub, string])[] = [['mine', 'My media'], ['anim', 'Animations'], ['models', '3D Models'], ['hub', 'Asset Hub'], ['builtin', 'Built-in'], ['stock', 'Stock'], ['search', 'Search this PC'], ['history', 'History']]
+const SUBS: readonly (readonly [Sub, string])[] = [['mine', 'My media'], ['anim', 'Animations'], ['models', '3D Models'], ['hub', 'Asset library'], ['builtin', 'Built-in'], ['stock', 'Stock'], ['search', 'Search this PC'], ['history', 'History']]
 const KINDS = [{ id: '', label: 'All' }, { id: 'video', label: 'Video' }, { id: 'audio', label: 'Audio' }, { id: 'image', label: 'Image' }]
 const ORIGINS = [{ id: '', label: 'All sources' }, { id: 'import', label: 'Local import' }, { id: 'upload', label: 'Upload' }, { id: 'download', label: 'Link download' },
   { id: 'music', label: 'AI music' }, { id: 'segment', label: 'Segments' }, { id: 'ai', label: 'AI processed' }, { id: 'export', label: 'Exported' }]

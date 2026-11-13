@@ -28,7 +28,18 @@ LICENSES: dict[str, tuple[str, str, bool, bool, bool]] = {
     "custom:truebones": ("Truebones royalty-free licence (check the readme in your purchase)", "https://truebones.gumroad.com/", True, True, False),
     "custom:sampling-plus": ("Sampling+ 1.0", "https://creativecommons.org/licenses/sampling+/1.0/", False, True, True),
     "custom:unknown": ("Unknown licence - check before use", "", False, False, True),
+    "PDM-1.0": ("Public Domain Mark 1.0 (no known copyright)", "https://creativecommons.org/publicdomain/mark/1.0/", True, True, False),
+    "custom:nasa-media": ("NASA media usage guidelines (generally not copyrighted; credit NASA, no endorsement or logo use; "
+                          "check third-party credits)", "https://www.nasa.gov/nasa-brand-center/images-and-media/", True, True, True),
 }
+
+# Every Creative Commons variant/version that catalogues such as Openverse report (CC BY-SA 2.0 etc.).
+_CC_FLAGS = {"BY": (True, True), "BY-SA": (True, True), "BY-ND": (True, False), "BY-NC": (False, True),
+             "BY-NC-SA": (False, True), "BY-NC-ND": (False, False)}
+for _v in ("1.0", "2.0", "2.5", "3.0", "4.0"):
+    for _code, (_com, _mod) in _CC_FLAGS.items():
+        LICENSES.setdefault(f"CC-{_code}-{_v}", (f"CC {_code} {_v}", f"https://creativecommons.org/licenses/{_code.lower()}/{_v}/",
+                                                 _com, _mod, True))
 
 COMMERCIAL_SAFE, ATTRIBUTION, NON_COMMERCIAL, RESTRICTED = "commercial-safe", "attribution", "non-commercial", "restricted"
 LICENSE_CLASSES = [COMMERCIAL_SAFE, ATTRIBUTION, NON_COMMERCIAL, RESTRICTED]
@@ -54,10 +65,10 @@ def license_class(lic: str) -> str:
 
 
 def allowed(lic: str, policy: str) -> bool:
-    """policy: 'cc0' = CC0 only; 'commercial' = commercial use + modification allowed (CC0, CC-BY, OFL...);
+    """policy: 'cc0' = public domain only (CC0 or the Public Domain Mark); 'commercial' = commercial use + modification allowed (CC0, CC-BY, OFL...);
     'any' = everything except unknown."""
     if policy == "cc0":
-        return lic == "CC0-1.0"
+        return lic in ("CC0-1.0", "PDM-1.0")
     if policy == "commercial":
         t = LICENSES.get(lic)
         return bool(t and t[2] and t[3])
@@ -73,6 +84,8 @@ def from_text(s: str | None) -> str:
         return next(k for k in LICENSES if k.lower() == t)
     if "zero" in t or t in {"cc0", "cc0 1.0", "creative commons 0", "public domain", "cc-0"} or "cc0" in t:
         return "CC0-1.0"
+    if "publicdomain/mark" in t or t in {"pdm", "public domain mark"}:
+        return "PDM-1.0"
     if "sampling" in t:
         return "custom:sampling-plus"
     if t in {"ofl", "ofl-1.1"} or "open font" in t:
@@ -81,7 +94,8 @@ def from_text(s: str | None) -> str:
         return "Apache-2.0"
     if t in {"ufl", "ubuntu"}:
         return "UFL-1.0"
-    ver = "3.0" if re.search(r"\b3\.0\b|/3\.0", t) else "4.0"
+    vm = re.search(r"(?<![\d.])([1-4]\.[05])(?![\d])", t)
+    ver = vm.group(1) if vm and vm.group(1) in ("1.0", "2.0", "2.5", "3.0", "4.0") else "4.0"
     url_m = re.search(r"licenses/([a-z\-]+)/", t)
     parts = set(url_m.group(1).split("-")) if url_m else set()
     words = t.replace("_", " ").replace("-", " ")
@@ -90,13 +104,13 @@ def from_text(s: str | None) -> str:
     sa = "sa" in parts or "sharealike" in words.replace(" ", "") or re.search(r"\bsa\b", words)
     if "by" in parts or "attribution" in words or re.search(r"\bby\b", words):
         if nc and nd:
-            return "CC-BY-NC-ND-4.0"
+            return f"CC-BY-NC-ND-{ver}"
         if nc and sa:
-            return "CC-BY-NC-SA-4.0"
+            return f"CC-BY-NC-SA-{ver}"
         if nc:
-            return f"CC-BY-NC-{ver}" if f"CC-BY-NC-{ver}" in LICENSES else "CC-BY-NC-4.0"
+            return f"CC-BY-NC-{ver}"
         if nd:
-            return "CC-BY-ND-4.0"
+            return f"CC-BY-ND-{ver}"
         if sa:
             return f"CC-BY-SA-{ver}"
         return f"CC-BY-{ver}"

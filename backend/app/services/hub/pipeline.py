@@ -12,6 +12,7 @@ from .connectors import REGISTRY, ConnectorError, DLContext
 from .connectors import get as get_connector
 
 MEDIA_KINDS = {"image", "sprite", "texture", "sfx", "music", "voice", "video"}
+NO_AUTO_TAG_KINDS = {"sfx", "music", "voice", "font", "sprite"}
 _ingest_lock = threading.Lock()
 
 
@@ -48,7 +49,8 @@ def enrich(aid: str, *, use_clip: bool = True, use_text: bool = True) -> dict:
                 st = dict(rec.get("stats") or {})
                 st["auto_tags"] = auto
                 upd["stats"] = st
-                upd["tags"] = list(dict.fromkeys(rec["tags"] + auto))
+                if rec["kind"] not in NO_AUTO_TAG_KINDS:   # CLIP guesses on waveforms / glyphs are noise
+                    upd["tags"] = list(dict.fromkeys(rec["tags"] + auto))
     if use_text:
         text = f"{rec['kind']}: {rec['name']}. {rec.get('description') or ''} Tags: {', '.join(upd.get('tags') or rec['tags'])}"
         tv = ai.text_embed([text])

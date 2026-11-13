@@ -15,7 +15,7 @@ from .connectors import REGISTRY, ConnectorError, NeedsKey
 from .net import CapExceeded, HubHTTPError
 from .pipeline import Skipped, add_candidate
 
-MAX_PAGES = 25
+MAX_PAGES = 100   # 24 per page -> up to 2400 items per query and kind
 _lock = threading.Lock()
 _live: dict[str, dict] = {}
 
@@ -61,7 +61,9 @@ def normalize_params(p: dict) -> dict:
             "kinds": [k for k in (p.get("kinds") or []) if k] or [None],
             "max_items": max(1, min(int(p.get("max_items") or 50), 20000)),
             "max_gb": max(0.001, min(float(p.get("max_gb") or 2.0), 500.0)),
-            "license_policy": policy, "variants": p.get("variants") or {"texture_res": "1k"}}
+            "license_policy": policy, "variants": p.get("variants") or {"texture_res": "1k"},
+            # optional cap per (query, kind) so one broad query cannot use up the whole quota
+            "per_query": max(0, min(int(p.get("per_query") or 0), 20000))}
 
 
 def new_state(params: dict) -> dict:
@@ -111,7 +113,7 @@ def run(st: dict, ctx: JobContext) -> dict:
                     continue
                 ctx.check()
                 try:
-                    kw = {"policy": prm["license_policy"]} if src in ("freesound", "sketchfab") else {}
+                    kw = {"policy": prm["license_policy"]} if src in ("freesound", "sketchfab", "openverse") else {}
                     res = con.search(q, kind, page, **kw)
                 except NeedsKey as e:
                     ss["done"], ss["note"] = True, str(e)
@@ -124,9 +126,12 @@ def run(st: dict, ctx: JobContext) -> dict:
                     ss["cursor"] = [qi, ki, page]
                     save(st)
                     continue
+                per_q = prm.get("per_query") or 0
                 for cand in res["items"]:
                     ctx.check()
                     if ss["added"] >= quota or tot["added"] >= max_items or tot["bytes"] >= max_bytes:
+                        break
+                    if per_q and ss.get("q_added", 0) >= per_q:
                         break
                     try:
                         r = add_candidate(cand, variant=prm["variants"], policy=prm["license_policy"],
@@ -137,6 +142,7 @@ def run(st: dict, ctx: JobContext) -> dict:
                         ss["bytes"] += r.get("bytes", 0)
                         tot["bytes"] += r.get("bytes", 0)
                         if r["status"] == "added":
+                            ss["q_added"] = ss.get("q_added", 0) + 1
                             a = r["asset"]
                             st["recent"] = ([{"id": a["id"], "name": a["name"], "kind": a["kind"], "source": src,
                                               "thumb": a.get("thumb_url"), "license": a["license"]}] + st["recent"])[:24]
@@ -162,10 +168,11 @@ def run(st: dict, ctx: JobContext) -> dict:
                     ss["done"] = True
                     ss["note"] = "quota reached" if ss["added"] >= quota else "global cap reached"
                     break
-                if res.get("has_more") and page < MAX_PAGES and res["items"]:
+                if res.get("has_more") and page < MAX_PAGES and res["items"] and not (per_q and ss.get("q_added", 0) >= per_q):
                     page += 1
                 else:
                     qi, ki, page = _advance(qi, ki, prm)
+                    ss["q_added"] = 0
                 ss["cursor"] = [qi, ki, page]
                 save(st)
             if not ss["done"]:
