@@ -232,10 +232,10 @@ class Engine:
     def stop(self) -> None:
         """Stops the engine (also one we only attached to - used before an update/restart)."""
         pid = self.pid
-        if pid:
+        if pid and pid_alive(pid):
             kill_tree(pid)
-            for _ in range(40):
-                if not pid_alive(pid) and not port_in_use(self.port):
+            for _ in range(40):              # wait for the process only: the port may already belong to a new engine
+                if not pid_alive(pid):
                     break
                 time.sleep(0.25)
             self.log(f"engine stopped (pid {pid})")

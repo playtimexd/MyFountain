@@ -97,6 +97,7 @@ class App:
         self.force_quit = False
         self.relaunch = False
         self.boot_lock = threading.Lock()
+        self.op_lock = threading.Lock()      # one at a time: engine restart, update, data-folder change
 
     # ---------------------------------------------------------------- start-up
     def boot(self) -> None:
@@ -143,10 +144,16 @@ class App:
         st.set("ready", "Ready")
 
     def restart_engine(self) -> None:
-        self.state.set("stopping", "Stopping the engine…")
-        self.engine.stop()
-        self.engine = Engine(self.data, self.state.log)
-        self.boot()
+        if not self.op_lock.acquire(blocking=False):
+            self.state.log("restart ignored - an update or another restart is in progress")
+            return
+        try:
+            self.state.set("stopping", "Stopping the engine…")
+            self.engine.stop()
+            self.engine = Engine(self.data, self.state.log)
+            self.boot()
+        finally:
+            self.op_lock.release()
 
     def watchdog(self) -> None:
         while not self.quitting:
@@ -202,12 +209,16 @@ class App:
         if busy:
             return f"{len(busy)} job(s) are still running ({', '.join(j.get('title') or j.get('kind', '?') for j in busy[:3])}). " \
                    "Wait for them to finish or cancel them, then update."
+        if not self.op_lock.acquire(blocking=False):
+            return "The engine is restarting - try again in a moment."
         self.state.update = {"running": True, "done": False, "ok": False, "error": "", "lines": [], "result": None}
         threading.Thread(target=self._update, daemon=True).start()
         return ""
 
     def _update(self) -> None:
+        """Runs with self.op_lock held (taken by start_update)."""
         st, u = self.state, self.state.update
+        stopped = False
         try:
             info = updater.check(fetch=True, cfg=self.cfg)
             if info["blocked"]:
@@ -219,6 +230,7 @@ class App:
             st.set("updating", f"Updating to {info['target']}…")
             st.log("Stopping the engine…")
             self.engine.stop()
+            stopped = True
             res = updater.apply(st.log, cfg=self.cfg)
             u["result"] = {"updated": res["updated"], "from": res.get("from", "")[:7], "to": res.get("to", "")[:7],
                            "launcher": bool(res["info"]["will"].get("launcher"))}
@@ -227,16 +239,20 @@ class App:
             u["error"] = str(e)
             st.log(f"Update failed: {e}")
         finally:
-            if u.get("ok") and (u.get("result") or {}).get("launcher"):
-                st.log("The app itself changed - restarting CutLab…")
-                self.relaunch = True
+            relaunch = bool(u.get("ok") and (u.get("result") or {}).get("launcher"))
+            try:
+                if relaunch:
+                    st.log("The app itself changed - restarting CutLab…")
+                    self.relaunch = True
+                elif stopped:                       # bring the engine back (new code, or the old one after a rollback)
+                    self.engine = Engine(self.data, st.log)
+                    self.boot()
+            finally:
                 u.update(running=False, done=True)
+                self.op_lock.release()
+            if relaunch:
                 time.sleep(1.5)
                 self.quit(force=True)
-                return
-            self.engine = Engine(self.data, st.log)
-            self.boot()
-            u.update(running=False, done=True)
 
     # ---------------------------------------------------------------- window helpers
     def show_page(self, path: str, new_edge_window: bool = True) -> None:
@@ -410,6 +426,8 @@ def set_data_dir(app: App, path: str) -> dict:
     busy = busy_jobs(app.engine.base) if app.engine.running() else []
     if busy:
         return {"error": f"{len(busy)} job(s) are running - try again when they are done."}
+    if app.op_lock.locked():
+        return {"error": "The engine is restarting or updating - try again in a moment."}
     app.cfg = save_config({"data_dir": path})
     app.data = data_dir(app.cfg)
     app.log(f"data folder set to {app.data}")
