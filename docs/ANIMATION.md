@@ -364,6 +364,26 @@ Opus/Claude 通过 `services/llm.py`（已实现：ollama / anthropic 二选一�
 全部 1859 条：平均 +0.8 分，150 条升 2 分以上，19 条降 2 分以上。升得最多的：Lyra 长椅坐姿 47.8 → 87.8，ALS LandRoll 45 → 84.6，Lyra 跳跃下落循环 60 → 99.3，Kimodo 躺地起身 40 → 73.6。
 
 **已知问题**（降得最多的几条）：
-- GASP `Climb Start 2 5 walk F`（Lfoot 96.9 → 59.4，Rfoot 92.9 → 84.6）：攀爬起步时"着地"的脚以身体速度的 7–14 倍移动。旧的锁把它冻住，评分看不出问题；现在脚跟着源动画走，评分把它算成滑步。要改的是攀爬时的接触判断。
+- ~~GASP `Climb Start 2 5 walk F` 着地判断~~ → 根因是位移推算误判，已修，见 §3.7.12。
 - 原地转身（ALS CLF TurnIP R90 88.5 → 64.9、TurnIP R180、Lyra Crouch Turn 180）和 ALS CLF GetUp Back（69.9 → 47.7）：被判"躯干后仰 / 膝盖弯反"。评分以脚尖方向为"前"，而整段接触时脚的朝向被固定，身体在转。GetUp Back 改用休息姿势的弯曲方向能回到 67，但 LandRoll 会退回 45，所以保留现在的做法。
-- GASP Run Arc Small L/R 85 → 81，几条 Sprint Turn 低 1–2 分。
+- 几条 GASP Sprint Turn 低 1–2 分（Run Arc Small 已在 §3.7.12 修回 89）。
+
+### 3.7.12 攀爬起步：误判"原地动画"，真实根运动被替换（2026-11-13）
+GASP `Climb Start 2 5 walk F`（Lfoot 96.9 → 59.4）表面上是着地判断出错，根子在 `recover_travel`：这条带真实根运动的片段（骨盆走了 4 m）被当成"原地/镜头跟踪"的动画，真实位移被换成从脚推算的 7.84 m。推算的位移前几帧太慢，于是站着的脚被拖着走 2–4 m/s；挂墙之后又以 1.94 m/s 匀速平移。
+
+原来的判断有三个问题：
+- 身体高度用整段的高度范围。2.5 m 攀爬被当成 3.5 m 高的身体，阈值整体放大。
+- "身体速度"取**所有**关节的平均，而且只看首尾直线距离。UE 的辅助骨骼（`ik_*_root` 在原点不动、`center_of_mass`/`interaction` 在几米外的目标点）把平均值拉向不动。转身类片段（先后退再前进）首尾几乎重合，被当成"身体没动"。
+- 往墙上爬的脚被算作"着地后在滑"。
+
+**改动**：
+- 身体高度取第一帧身体关节的范围，排除辅助骨骼和离群点。
+- 身体运动看骨盆（没有骨盆时取身体关节中心）。
+- 速度取 1 秒窗口内的平均位移：转身仍算在动，视频的抖动不会累加。
+
+**结果**：
+- 49 条 GASP（Crouch/Walk/Run Pivot、Circle、Arc、Climb Start）不再推算位移，全部恢复用真实根运动。
+- 14 条原地动画开始推算位移（ALS Sprint、JumpWalk、JumpRun、Flail，Lyra Dash）。以前跳跃把"身体高度"撑大，没有触发。
+- 重做了受影响的 131 条：117 条更新，平均 +1.7 分，37 条升 2 分以上。14 条新结果更低，保留原 bake（ALS JumpWalk：源动画的脚在跳跃时穿到地下 25 cm；熊的视频动作）。
+- 例子：Climb Start Lfoot 59.4 → 94.1，Rfoot 84.6 → 91.1；Run Arc Small L/R 81 → 89；Lyra Dash Forward 65.6 → 74.4；GASP Crouch Pivot 95 → 99。
+- 旧 bake 备份在 `data/anim/_backup_travelfix_20261113/`，数据库备份为 `anim.db.bak-travelfix`。12 条预览视频已重新渲染。三套动画测试通过。

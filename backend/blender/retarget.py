@@ -191,7 +191,14 @@ def recover_travel(P, jn, fps, notes, mode="auto"):
     feet = [i for i, n in enumerate(jn) if re.search(r"paw|ankle|foot|heel|toe|hoof", n.lower()) and not re.search(r"end|tip", n.lower())]
     if T < 12 or len(feet) < 2:
         return P
-    h = float(np.ptp(P[..., 1])) or 1.0
+    # body joints only: UE helper bones (ik_*_root at the origin, center_of_mass / interaction at a warp target metres away)
+    # stand still and pulled the body's travel towards zero
+    d0 = np.linalg.norm(P[0] - np.median(P[0], axis=0), axis=1)
+    body_j = [i for i in range(P.shape[1]) if d0[i] <= 4.0 * max(float(np.median(d0)), 1e-9)
+              and not re.search(r"^ik_|center_of_mass|interaction|^root$", jn[i].lower())] or list(range(P.shape[1]))
+    feet = [i for i in feet if i in body_j and not jn[i].lower().startswith("ik_")] or feet
+    # body height of the first frame - not the clip's height range (a 2.5 m climb read as a 3.5 m body)
+    h = float(np.ptp(P[0, body_j, 1])) or 1.0
     y = P[:, feet, 1]
     xz = P[:, feet][:, :, [0, 2]]
     vxz = np.zeros_like(xz)
@@ -209,8 +216,12 @@ def recover_travel(P, jn, fps, notes, mode="auto"):
     if ok.sum() < 0.3 * T:
         return P
     slide = float(np.median(np.linalg.norm(c[ok], axis=1)))
-    body = P[:, :, [0, 2]].mean(axis=1)
-    body_speed = float(np.linalg.norm(body[-1] - body[0])) / max((T - 1) / fps, 1e-6)
+    pel = next((i for i in body_j if re.search(r"pelvis|hips?$", jn[i].lower())), None)
+    body = P[:, pel, [0, 2]] if pel is not None else P[:, body_j][:, :, [0, 2]].mean(axis=1)
+    # speed over 1 s windows: a pivot (back, then forward again) ends where it started, which read as "the body stays put"
+    # (GASP / Lyra pivots, a GASP climb start: their real root motion was replaced); video jitter does not add up over 1 s
+    w = int(min(round(fps), T - 1))
+    body_speed = float(np.mean(np.linalg.norm(body[w:] - body[:-w], axis=1))) / (w / fps)
     if mode == "auto" and not (slide > 0.15 * h and body_speed < 0.5 * slide):
         return P
     tt = np.arange(T)
