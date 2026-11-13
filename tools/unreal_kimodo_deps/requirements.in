@@ -1,0 +1,24 @@
+# Kimodo dependencies for Unreal Engine's project Python (UE 5.9: CPython 3.11, Win64).
+# Source: the "NVIDIA Kimodo - Unreal Engine 5.9 Python Dependency Fix" note. numpy is pinned < 2 up front
+# (the note installed numpy 2.x first and downgraded it in step 5).  torch comes from the CUDA 12.8 index.
+numpy<2
+torch==2.11.0+cu128          # newest CUDA 12.8 build for cp311 win_amd64; unpinned, PyPI's CPU-only torch would win
+tqdm
+omegaconf>=2.3
+scipy<2
+hydra-core>=1.3
+transformers==5.1.0
+peft>=0.18
+urllib3>=2.6.3
+boto3
+einops
+packaging
+pydantic
+filelock
+trimesh
+scenepic
+pillow
+av
+bvhio
+gradio>=6.8.0
+gradio_client>=1.0
