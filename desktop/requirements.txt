@@ -1,0 +1,3 @@
+# Desktop window (uses the Microsoft Edge WebView2 runtime that ships with Windows 10/11).
+# Without it the launcher falls back to an Edge "--app" window, so this is optional.
+pywebview>=5.0

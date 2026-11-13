@@ -39,4 +39,7 @@ if _dist.exists():
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa(full_path: str):
         f = _dist / full_path
-        return FileResponse(f if f.is_file() else _dist / "index.html")
+        if f.is_file() and f.name != "index.html":
+            return FileResponse(f)
+        # index.html must not be cached: after an update it points at new hashed /assets files
+        return FileResponse(_dist / "index.html", headers={"Cache-Control": "no-cache"})

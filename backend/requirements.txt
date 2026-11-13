@@ -1,0 +1,12 @@
+# Core engine dependencies (python -m app). Installed by setup.ps1 and re-installed by the in-app updater when this file changes.
+# Optional AI features (whisper, Real-ESRGAN, ComfyUI, mocap, ...) have their own installers in scripts/ - see README.
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+httpx>=0.27
+pydantic>=2.6
+yt-dlp[default]>=2025.1.1
+scenedetect>=0.6.4          # also brings opencv-python (provides cv2)
+pillow>=10.0
+numpy>=1.26
+scipy>=1.11

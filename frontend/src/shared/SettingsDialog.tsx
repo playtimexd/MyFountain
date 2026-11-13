@@ -5,6 +5,7 @@ import { Field } from './ui'
 
 const MASK = '••••••••'
 type S = Record<string, string>
+interface AppInfo { version: string; branch: string; data: string; desktop: { url: string } | null }
 
 interface Group { title: string; note?: string; fields: { key: string; label: string; secret?: boolean; options?: string[]; placeholder?: string }[] }
 
@@ -50,10 +51,12 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [caps, setCaps] = useState<any>(null)
   const [saved, setSaved] = useState(false)
   const [err, setErr] = useState('')
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
 
   useEffect(() => {
     api.get<S>('/api/settings').then((s) => { setVals(s); setOrig(s) }).catch((e) => setErr(e.message))
     api.get('/api/capabilities').then(setCaps).catch(() => {})
+    api.get<AppInfo>('/api/app/info').then(setAppInfo).catch(() => {})
   }, [])
   useEffect(() => { const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h) }, [onClose])
 
@@ -105,7 +108,22 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           ))}
-          <div className="faint" style={{ fontSize: 11 }}>Keys are stored only in data/settings.json on this machine and are never sent back to the browser (masked as ••••••••).</div>
+          {appInfo && (
+            <div className="panel" style={{ padding: 14, marginBottom: 12 }}>
+              <div className="row" style={{ marginBottom: 4 }}>
+                <span style={{ fontWeight: 600 }}>App</span>
+                <span className="faint" style={{ fontSize: 12 }}>version {appInfo.version || '?'}{appInfo.branch && appInfo.branch !== 'main' ? ` · branch ${appInfo.branch}` : ''}</span>
+                <span className="grow" />
+                {appInfo.desktop && <button className="btn" onClick={() => { window.location.href = appInfo.desktop!.url + '/settings' }}>Data folder…</button>}
+                {appInfo.desktop && <button className="btn primary" onClick={() => { window.location.href = appInfo.desktop!.url + '/update' }}>Check for updates</button>}
+              </div>
+              <div className="faint" style={{ fontSize: 12 }}>
+                Data folder: <span style={{ fontFamily: 'Consolas, monospace' }}>{appInfo.data}</span>
+                {!appInfo.desktop && <> · Updates: run the CutLab desktop app (desktop\cutlab_desktop.py) or <code>git pull</code> then <code>.\setup.ps1</code></>}
+              </div>
+            </div>
+          )}
+          <div className="faint" style={{ fontSize: 11 }}>Keys are stored only in settings.json in the data folder on this machine and are never sent back to the browser (masked as ••••••••).</div>
         </div>
         <div className="row" style={{ padding: '10px 16px', borderTop: '1px solid var(--line)' }}>
           <span className="err grow" style={{ margin: 0 }}>{err}</span>

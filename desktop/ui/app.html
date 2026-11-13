@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CutLab</title>
+<link rel="icon" href="/icon.png">
+<style>
+  :root { --bg:#0c0d10; --bg-2:#15171b; --bg-3:#1b1d22; --line:#2a2d34; --text:#e7e8ec; --dim:#9a9ca6; --accent:#7c5cff;
+          --accent-2:#5b8cff; --ok:#3ecf8e; --warn:#f5b84b; --err:#ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 24px; }
+  .center { min-height: 100%; display:flex; align-items:center; justify-content:center; text-align:center; }
+  .center .wrap { width:100%; }
+  h1 { font-size: 22px; font-weight: 600; margin: 14px 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; }
+  .dim { color: var(--dim); }
+  .small { font-size: 12px; }
+  .logo { width:72px; height:72px; }
+  .spinner { width:18px; height:18px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--accent); animation:spin .8s linear infinite;
+             display:inline-block; vertical-align:-4px; margin-right:8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .msg { margin-top: 18px; font-size: 15px; }
+  .err { color: var(--err); }
+  .okc { color: var(--ok); }
+  .warnc { color: var(--warn); }
+  pre { background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; text-align:left; font: 12px/1.45 Consolas, monospace;
+        color:#c9cbd3; max-height: 260px; overflow:auto; white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; }
+  details { margin-top: 18px; text-align: left; }
+  summary { cursor: pointer; color: var(--dim); font-size: 12px; }
+  .btns { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top: 20px; }
+  .btns.left { justify-content:flex-start; }
+  button { height: 34px; padding: 0 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg-3); color: var(--text);
+           font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: #3a3e47; background: #22252b; }
+  button.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 0; color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.1); }
+  button:disabled { opacity: .45; cursor: default; }
+  .card { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-top: 14px; }
+  .row { display:flex; gap:10px; align-items:baseline; }
+  .grow { flex: 1; }
+  .head { display:flex; align-items:center; gap:14px; }
+  .head img { width: 40px; height: 40px; }
+  .head h1 { margin: 0; }
+  ul { margin: 6px 0 0; padding-left: 18px; }
+  li { margin: 3px 0; }
+  code, .mono { font-family: Consolas, monospace; font-size: 12.5px; }
+  .commit { display:flex; gap:10px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .commit:first-child { border-top: 0; }
+  .commit .h { color: var(--accent-2); font-family: Consolas, monospace; font-size: 12.5px; flex: none; }
+  .commit .s { flex: 1; min-width: 0; }
+  .badge { display:inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; background: #23262d; color: var(--dim); margin-right: 6px; }
+  .note { border-left: 3px solid var(--warn); padding: 6px 10px; background: rgba(245,184,75,.07); border-radius: 4px; margin-top: 10px; }
+  .note.err { border-color: var(--err); background: rgba(255,107,107,.07); color: var(--text); }
+  .note.ok { border-color: var(--ok); background: rgba(62,207,142,.07); }
+  input[type=text] { width: 100%; height: 34px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+                     padding: 0 10px; font: 13px Consolas, monospace; }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- start-up -------------------------------------------------------------------------------------- -->
+<section id="v-start" class="center hidden">
+  <div class="wrap">
+    <img class="logo" src="/icon.png" alt="">
+    <h1>CutLab</h1>
+    <div class="msg" id="s-msg"><span class="spinner"></span><span>Starting…</span></div>
+    <div class="dim small" id="s-detail" style="white-space:pre-wrap;margin-top:6px"></div>
+    <div class="btns hidden" id="s-btns">
+      <button class="primary" onclick="post('/api/retry')">Try again</button>
+      <button onclick="post('/api/restart-engine')">Restart engine</button>
+      <button onclick="post('/api/open',{what:'data'})">Open data folder</button>
+      <button onclick="post('/api/open',{what:'logs'})">Open log folder</button>
+    </div>
+    <details><summary>Details</summary><pre id="s-log"></pre></details>
+  </div>
+</section>
+
+<!-- updates --------------------------------------------------------------------------------------- -->
+<section id="v-update" class="hidden">
+  <div class="wrap">
+    <div class="head"><img src="/icon.png" alt=""><div class="grow"><h1>Updates</h1>
+      <div class="dim small">Installed version <span class="mono" id="u-version">…</span></div></div>
+      <button onclick="backToApp()">Back to CutLab</button></div>
+
+    <div class="card" id="u-status"><span class="spinner"></span>Checking for updates…</div>
+    <div id="u-result"></div>
+
+    <div class="btns left" id="u-btns">
+      <button class="primary" id="u-apply" disabled onclick="applyUpdate()">Update now</button>
+      <button id="u-check" onclick="checkUpdates()">Check again</button>
+    </div>
+    <div id="u-progress" class="hidden">
+      <h2 id="u-progress-title"><span class="spinner"></span>Updating…</h2>
+      <pre id="u-log" style="max-height:340px"></pre>
+    </div>
+    <p class="dim small" style="margin-top:28px">Your data folder <span class="mono" id="u-data"></span> is never touched by updates.
+      Updates fast-forward <span class="mono" id="u-branch">main</span> from git, reinstall packages when their lists changed,
+      rebuild the interface and restart the engine.</p>
+  </div>
+</section>
+
+<!-- quit with running jobs ---------------------------------------------------------------------- -->
+<section id="v-quit" class="center hidden">
+  <div class="wrap">
+    <img class="logo" src="/icon.png" alt="">
+    <h1>Jobs are still running</h1>
+    <div class="dim" id="q-text">Closing CutLab stops the engine and cancels them.</div>
+    <div class="card" style="text-align:left" id="q-list"></div>
+    <div class="btns">
+      <button onclick="backToApp()">Keep working</button>
+      <button class="primary" onclick="post('/api/quit')">Quit anyway</button>
+    </div>
+  </div>
+</section>
+
+<!-- data folder ----------------------------------------------------------------------------------- -->
+<section id="v-settings" class="hidden">
+  <div class="wrap">
+    <div class="head"><img src="/icon.png" alt=""><div class="grow"><h1>Data folder</h1>
+      <div class="dim small">Projects, media, asset hub, animation library, settings and API keys, exports</div></div>
+      <button onclick="backToApp()">Back to CutLab</button></div>
+    <div class="card">
+      <div class="dim small">Current</div>
+      <div class="row"><div class="mono grow" id="d-current"></div><button onclick="post('/api/open',{what:'data'})">Open</button></div>
+    </div>
+    <h2>Use another folder</h2>
+    <input type="text" id="d-new" placeholder="e.g. D:\CutLab Data   (empty = default: the git-ignored data\ folder in the program folder)">
+    <div class="note">Files are not moved. To keep your work, close CutLab and copy the contents of the current folder to the new one first,
+      or point CutLab at a folder that already holds CutLab data. The engine restarts after the change.</div>
+    <div class="btns left"><button class="primary" onclick="saveDataDir()">Save and restart engine</button></div>
+    <div id="d-result"></div>
+    <p class="dim small" style="margin-top:28px">Stored in <span class="mono" id="d-config"></span> (outside the program folder).
+      The <span class="mono">CUTLAB_DATA</span> environment variable overrides it.</p>
+  </div>
+</section>
+
+<script>
+const view = location.pathname.replace(/^\//, '') || 'start'
+document.getElementById('v-' + view)?.classList.remove('hidden')
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+let state = null
+
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+  return r.json().catch(() => ({}))
+}
+async function getState() {
+  try { state = await (await fetch('/api/state')).json() } catch { state = null }
+  return state
+}
+function backToApp() {
+  if (state && state.phase === 'ready') location.replace(state.engine_url + '/')
+  else location.replace('/')
+}
+
+// ---------------------------------------------------------------- start-up
+async function pollStart() {
+  const s = await getState()
+  if (s) {
+    if (s.phase === 'ready') { location.replace(s.engine_url + '/'); return }
+    const error = s.phase === 'error'
+    $('s-msg').innerHTML = error ? `<span class="err">${esc(s.message)}</span>` : `<span class="spinner"></span><span>${esc(s.message)}</span>`
+    $('s-detail').textContent = s.detail || ''
+    $('s-btns').classList.toggle('hidden', !error)
+    const log = $('s-log'); const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4
+    log.textContent = s.lines.join('\n'); if (atEnd) log.scrollTop = log.scrollHeight
+  }
+  setTimeout(pollStart, 500)
+}
+
+// ---------------------------------------------------------------- updates
+async function checkUpdates() {
+  $('u-apply').disabled = true; $('u-check').disabled = true
+  $('u-status').innerHTML = '<span class="spinner"></span>Checking for updates…'
+  $('u-result').innerHTML = ''
+  const r = await post('/api/update/check')
+  $('u-check').disabled = false
+  $('u-data').textContent = r.data_dir || ''
+  $('u-branch').textContent = `${r.remote || 'origin'}/${r.branch || 'main'}`
+  if (r.error) { $('u-status').innerHTML = `<span class="err">${esc(r.error)}</span>`; return }
+  let html = ''
+  const busy = r.busy_jobs || []
+  if (r.blocked) {
+    $('u-status').innerHTML = `<b class="err">Update not possible</b>`
+    html += `<div class="note err">${esc(r.blocked)}</div>`
+    if (r.dirty_files?.length) html += `<pre>${r.dirty_files.map(esc).join('\n')}</pre>`
+  } else if (!r.behind) {
+    $('u-status').innerHTML = `<b class="okc">CutLab is up to date.</b> <span class="dim small">${esc(r.remote_url)} · checked ${esc(r.checked_at)}</span>`
+  } else {
+    $('u-status').innerHTML = `<b>${r.behind} new change${r.behind > 1 ? 's' : ''}</b> <span class="dim">${esc(r.head)} → ${esc(r.target)}</span>
+      <div class="dim small">${esc(r.remote_url)}</div>`
+    $('u-apply').disabled = busy.length > 0
+  }
+  if (r.commits?.length) {
+    html += '<h2>What changed</h2><div class="card">' + r.commits.map((c) =>
+      `<div class="commit"><span class="h">${esc(c.hash)}</span><span class="s">${esc(c.subject)}<div class="dim small">${esc(c.author)} · ${esc(c.when)}</div></span></div>`).join('') + '</div>'
+    const w = r.will || {}
+    const steps = []
+    if (w.python) steps.push('Install updated Python packages')
+    if (w.node) steps.push('Install updated frontend packages (npm ci)')
+    if (w.frontend) steps.push('Rebuild the interface')
+    steps.push('Restart the engine')
+    if (w.launcher) steps.push('Restart the CutLab window (the app itself changed)')
+    html += '<h2>The update will</h2><ul>' + steps.map((s) => `<li>${esc(s)}</li>`).join('') + '</ul>'
+    if (r.files?.length) html += `<details><summary>${r.files.length} changed file${r.files.length > 1 ? 's' : ''}</summary><pre>${
+      r.files.map((f) => `${f.status}  ${esc(f.path)}`).join('\n')}</pre></details>`
+  }
+  if (busy.length) html += `<div class="note">${busy.length} job${busy.length > 1 ? 's are' : ' is'} still running: ${
+    busy.map((j) => esc(j.title || j.kind)).join(', ')}. Update when they are done.</div>`
+  for (const w of r.warnings || []) html += `<div class="note">${esc(w)}</div>`
+  $('u-result').innerHTML = html
+}
+
+async function applyUpdate() {
+  $('u-apply').disabled = true; $('u-check').disabled = true
+  const r = await post('/api/update/apply')
+  if (r.error) { $('u-result').insertAdjacentHTML('afterbegin', `<div class="note err">${esc(r.error)}</div>`); $('u-check').disabled = false; return }
+  $('u-progress').classList.remove('hidden')
+  $('u-btns').classList.add('hidden')
+  pollUpdate()
+}
+
+async function pollUpdate() {
+  const s = await getState()
+  if (!s) { $('u-progress-title').innerHTML = '<span class="spinner"></span>CutLab is restarting…'; setTimeout(pollUpdate, 1000); return }
+  const u = s.update
+  $('u-log').textContent = u.lines.join('\n'); $('u-log').scrollTop = $('u-log').scrollHeight
+  if (u.done || (!u.running && (u.ok || u.error))) {
+    if (u.error) {
+      $('u-progress-title').innerHTML = `<span class="err">Update failed</span>`
+      $('u-log').insertAdjacentText('beforebegin', '')
+      $('u-result').innerHTML = `<div class="note err">${esc(u.error)}</div>`
+      $('u-btns').classList.remove('hidden'); $('u-check').disabled = false
+      return
+    }
+    const res = u.result || {}
+    if (res.launcher) { $('u-progress-title').innerHTML = '<span class="spinner"></span>Restarting CutLab…'; return }
+    if (s.phase === 'ready') {
+      $('u-progress-title').innerHTML = `<span class="okc">${res.updated ? `Updated to ${esc(res.to)}` : 'Already up to date'}</span> · opening CutLab…`
+      setTimeout(() => location.replace(s.engine_url + '/'), 1200)
+      return
+    }
+    $('u-progress-title').innerHTML = `<span class="spinner"></span>${esc(s.message)}`
+    if (s.phase === 'error') { location.replace('/'); return }
+  } else {
+    $('u-progress-title').innerHTML = `<span class="spinner"></span>${esc(s.message || 'Updating…')}`
+  }
+  setTimeout(pollUpdate, 600)
+}
+
+// ---------------------------------------------------------------- quit / settings
+async function initQuit() {
+  await getState()
+  const busy = await (await fetch('/api/busy')).json()
+  if (!busy.length) { post('/api/quit'); return }
+  $('q-list').innerHTML = busy.map((j) => `<div>${esc(j.title || j.kind)} <span class="dim small">${esc(j.status)}${
+    j.progress != null ? ' · ' + Math.round(j.progress * 100) + '%' : ''}</span></div>`).join('')
+}
+async function initSettings() {
+  const s = await getState()
+  $('d-current').textContent = s?.data_dir || ''
+  $('d-config').textContent = s?.config_path || ''
+}
+async function saveDataDir() {
+  const r = await post('/api/data-dir', { path: $('d-new').value })
+  if (r.error) { $('d-result').innerHTML = `<div class="note err">${esc(r.error)}</div>`; return }
+  location.replace('/')
+}
+
+if (view === 'start') pollStart()
+if (view === 'update') {
+  getState().then((s) => { $('u-version').textContent = s?.version || '?'; if (s?.update?.running) { $('u-progress').classList.remove('hidden'); $('u-btns').classList.add('hidden'); pollUpdate() } else checkUpdates() })
+}
+if (view === 'quit') initQuit()
+if (view === 'settings') initSettings()
+</script>
+</body>
+</html>

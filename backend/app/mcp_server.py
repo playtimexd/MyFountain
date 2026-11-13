@@ -42,7 +42,7 @@ def ensure_engine() -> None:
     log("engine not running, starting it…")
     py = BACKEND / ".venv" / "Scripts" / "python.exe"
     flags = 0x00000008 | 0x00000200 if sys.platform == "win32" else 0      # DETACHED_PROCESS | NEW_PROCESS_GROUP
-    data = BACKEND.parent / "data"
+    from .config import DATA as data         # same data folder the engine uses (CUTLAB_DATA / desktop.json / ./data)
     data.mkdir(exist_ok=True)
     subprocess.Popen([str(py if py.exists() else sys.executable), "-m", "app"], cwd=str(BACKEND),
                      stdout=open(data / "server.log", "ab"), stderr=open(data / "server.err", "ab"),

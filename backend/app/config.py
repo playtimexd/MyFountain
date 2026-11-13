@@ -1,4 +1,4 @@
-"""Global paths / settings for CutLab. Everything user-visible lives under <ROOT>/data."""
+"""Global paths / settings for CutLab. Everything user-visible lives in the data folder (see _data_dir)."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,30 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]          # D:\CutLab
-DATA = Path(os.environ.get("CUTLAB_DATA", ROOT / "data"))
+
+
+def desktop_config_path() -> Path:
+    """Per-user launcher config (outside the git checkout): %LOCALAPPDATA%\\CutLab\\desktop.json."""
+    if os.environ.get("CUTLAB_DESKTOP_CONFIG"):
+        return Path(os.environ["CUTLAB_DESKTOP_CONFIG"])
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "CutLab" / "desktop.json"
+
+
+def _data_dir() -> Path:
+    """Data folder: $CUTLAB_DATA, else "data_dir" in desktop.json, else <checkout>/data (git-ignored)."""
+    if os.environ.get("CUTLAB_DATA"):
+        return Path(os.environ["CUTLAB_DATA"])
+    try:
+        d = json.loads(desktop_config_path().read_text("utf-8")).get("data_dir")
+        if d:
+            return Path(os.path.expandvars(d)).expanduser()
+    except Exception:
+        pass
+    return ROOT / "data"
+
+
+DATA = _data_dir()
 
 MEDIA_DIR = DATA / "media"         # downloaded / generated / uploaded files we own
 THUMB_DIR = DATA / "thumbs"

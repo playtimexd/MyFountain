@@ -2,22 +2,84 @@
 
 全部在本机运行：前端 React，后端 Python 引擎（FastAPI），渲染交给 ffmpeg（NVENC 硬编）。AI 能力全部走本地模型 / 本地 Ollama。
 
-## 启动
+## 桌面版（独立窗口，推荐）
+
+CutLab 是一个 Windows 桌面应用：自己的窗口、开始菜单 / 桌面快捷方式、应用图标、无控制台窗口。窗口由
+[pywebview](https://pywebview.flowrl.com)（系统自带的 Edge WebView2）提供；没装 pywebview 时自动改用 Edge `--app` 窗口。
+
+**需要**：Windows 10/11、Git、Python 3.11（3.10–3.13 可用）、Node.js ≥ 20、ffmpeg；动画 / 3D 需要 Blender 4.2+；（可选）Ollama。
+
+### 首次安装（全新克隆）
+
+```powershell
+git clone git@github.com:playtimexd/MyFountain.git CutLab
+cd CutLab
+.\setup.ps1                 # 或双击 setup.cmd（PowerShell 脚本被策略禁止时）
+```
+
+`setup.ps1` 可重复运行，只补缺的部分：
+
+1. 检查 git / Python / Node；
+2. 创建 `backend\.venv`（`-SystemSitePackages` 让 venv 能用系统 Python 已装的包）；
+3. `pip install -r backend\requirements.txt -r desktop\requirements.txt`（有 `uv` 时用 uv）、`npm ci`、构建界面到 `frontend\dist`；
+4. 按引擎自己的规则查找 ffmpeg 和 Blender（`FFMPEG`/`FFPROBE` 环境变量或 PATH；`blender_exe` 设置或 `C:\Program Files\Blender Foundation\Blender *`），找不到会提示；
+5. 创建开始菜单和桌面快捷方式 **CutLab**（`-NoShortcuts` 跳过，`-Launch` 装完直接打开）。
+
+可选 AI 能力（Whisper、Real-ESRGAN、ComfyUI…）另有安装脚本，见下文「本地模型：现状与启用」。
+
+### 启动 / 退出
+
+双击 **CutLab** 快捷方式（等价于 `backend\.venv\Scripts\pythonw.exe desktop\cutlab_desktop.py`）。启动器会：
+
+- 检查安装：依赖清单或前端源码变了就自动重装 / 重新构建（手动 `git pull` 之后也一样）；
+- 启动引擎并等它就绪；如果 :8787 上已经有一个用同一数据目录的 CutLab 引擎，就直接接入；端口被别的程序（或别的数据目录的 CutLab）占用时自动换一个空闲端口；
+- 关闭窗口时停止它自己启动的引擎（还有任务在跑会先确认）；接入的外部引擎保持运行；
+- 再次双击快捷方式只会把已打开的窗口切到前台。
+
+窗口菜单 **CutLab**：Check for updates…、Reload、Data folder…、Open data folder、Open log folder、Restart engine、Quit。
+`--edge` 强制用 Edge 窗口；`--update` 直接打开更新页。
+
+### 数据目录（全部在本机）
+
+所有用户数据都在一个数据目录里：项目、媒体、素材中心、动画库（`anim\anim.db`）、`cutlab.db`、`settings.json`（含 API Key）、导出、模型、引擎日志。
+
+| 优先级 | 来源 |
+|---|---|
+| 1 | 环境变量 `CUTLAB_DATA` |
+| 2 | `%LOCALAPPDATA%\CutLab\desktop.json` 里的 `"data_dir"`（`setup.ps1 -DataDir "D:\CutLab Data"`，或应用里 Settings → App → Data folder…） |
+| 3 | 默认：程序目录下的 `data\`（已被 `.gitignore` 忽略，永远不会被提交或被更新改动） |
+
+更换数据目录不会搬文件：先关掉 CutLab，把旧目录内容复制过去再切换。`%LOCALAPPDATA%\CutLab\` 里还有启动器日志（`desktop.log`）和窗口的浏览器存储（`webview\`）。
+引擎（`python -m app`）、MCP 服务器和启动器用同一套规则，所以三者总是看到同一个数据目录。
+
+### 更新（git）
+
+Settings → App → **Check for updates**，或窗口菜单 CutLab → Check for updates…：
+
+1. `git fetch origin main`，列出新提交、改动的文件，以及更新会做什么（重装 Python 包 / `npm ci` / 重新构建界面 / 重启窗口）；
+2. 有未提交的本地修改、当前不在 `main` 分支、本地 `main` 与远端分叉、或数据目录在仓库里且没被忽略时，**拒绝更新**并说明原因；未跟踪文件只提示；
+3. 有任务在运行时先等它们结束；
+4. **Update now**：停止引擎 → `git merge --ff-only origin/main` → 只在 `requirements.txt` / `package-lock.json` 变化时重装依赖 → 前端源码变化时构建到 `dist.next` 再替换（构建失败不会弄坏现有界面）→ 重启引擎并刷新窗口；启动器自身的代码变了就整个应用重启。
+   安装或构建失败会自动 `git reset --hard` 回到更新前的提交并用旧版本重新启动（此前已确认没有本地修改；未跟踪 / 被忽略的文件不受影响）。
+
+数据目录从不参与更新。命令行等价操作（需先关掉应用）：
+
+```powershell
+backend\.venv\Scripts\python.exe desktop\updater.py check   # 看有什么更新
+backend\.venv\Scripts\python.exe desktop\updater.py apply   # 拉取 + 同步依赖 + 构建
+backend\.venv\Scripts\python.exe desktop\updater.py sync    # 只同步依赖和界面（手动 git pull 之后）
+```
+
+更新源是 `desktop.json` 里的 `update_remote` / `update_branch`（默认 `origin` / `main`）。拉取用你自己的 git 凭据（SSH key 或 HTTPS），应用不会弹出密码输入框。
+
+## 开发模式（浏览器 + Vite 热更新）
 
 ```powershell
 .\start.ps1          # 同时起引擎(:8787)和界面(:5173)，并打开浏览器
 .\start.ps1 -Stop    # 停止
 ```
 
-首次安装依赖（已在本机完成）：
-
-```powershell
-uv venv --system-site-packages backend\.venv
-uv pip install --python backend\.venv\Scripts\python.exe fastapi uvicorn python-multipart httpx "yt-dlp[default]" scenedetect opencv-python-headless pillow numpy
-cd frontend; npm install
-```
-
-需要：ffmpeg、Node ≥ 20、Python 3.11、（可选）Ollama。引擎状态与可用能力：`GET http://127.0.0.1:8787/api/capabilities`。
+引擎状态与可用能力：`GET http://127.0.0.1:8787/api/capabilities`；版本与数据目录：`GET /api/app/info`。
 
 ## 五个区域
 

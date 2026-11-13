@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import shutil
 import subprocess
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter
@@ -50,7 +53,33 @@ def _up(url: str, path: str = "/health") -> bool:
 @router.get("/health")
 def health():
     from ..main import FAILED, LOADED
-    return {"ok": True, "routers": LOADED, "failed": FAILED}
+    # "app"/"data"/"pid" let the desktop launcher recognise (and, for updates, restart) an engine it did not start itself
+    return {"ok": True, "app": "cutlab", "data": str(config.DATA), "pid": os.getpid(), "routers": LOADED, "failed": FAILED}
+
+
+def _git(*args: str) -> str:
+    try:
+        return subprocess.run(["git", "-C", str(config.ROOT), *args], capture_output=True, text=True, timeout=5,
+                              **_NOWIN).stdout.strip()
+    except Exception:
+        return ""
+
+
+@router.get("/app/info")
+def app_info():
+    """Version + where things live. "desktop" is set when running inside the CutLab desktop app (desktop/cutlab_desktop.py):
+    its control server opens the update window."""
+    url = os.environ.get("CUTLAB_DESKTOP_URL", "")
+    if not url:      # an engine started outside the app, then attached to by the desktop launcher
+        try:
+            lk = json.loads((config.desktop_config_path().parent / "launcher.json").read_text("utf-8"))
+            if lk.get("url") and Path(lk.get("root", "")).resolve() == config.ROOT and _up(lk["url"], "/api/state"):
+                url = lk["url"]
+        except Exception:
+            pass
+    return {"version": _git("describe", "--always", "--dirty"), "commit": _git("rev-parse", "HEAD"),
+            "branch": _git("rev-parse", "--abbrev-ref", "HEAD"), "root": str(config.ROOT), "data": str(config.DATA),
+            "desktop": {"url": url} if url else None}
 
 
 @router.get("/capabilities")
