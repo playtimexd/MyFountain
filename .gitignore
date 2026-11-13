@@ -1,0 +1,44 @@
+# runtime data: projects, media, asset hub downloads (incl. licensed UE packs), models, databases, logs
+/data/
+/exports/
+/ui-polish-shots/
+
+# environments / build output
+backend/.venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+
+# secrets and local settings
+.env
+.env.*
+*.key
+*.pem
+settings.local.json
+
+# large binaries never belong in the repo
+*.fbx
+*.blend
+*.blend1
+*.npz
+*.npy
+*.safetensors
+*.ckpt
+*.pth
+*.onnx
+*.mp4
+*.mov
+*.wav
+*.zip
+*.7z
+*.log
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude/

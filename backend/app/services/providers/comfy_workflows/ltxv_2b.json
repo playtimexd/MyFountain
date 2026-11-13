@@ -1,0 +1,421 @@
+{
+  "id": "ltxv_2b",
+  "name": "LTX-Video 2B 0.9.5",
+  "description": "Official ComfyUI LTXV workflow (30 steps, CFG 3). Needs long, descriptive prompts. Fast, lowest VRAM of the options.",
+  "family": "ltxv",
+  "modes": [
+    "t2v",
+    "i2v"
+  ],
+  "fps": 24,
+  "frame_multiple": 8,
+  "max_seconds": 6,
+  "sizes": {
+    "16:9": [
+      768,
+      448
+    ],
+    "9:16": [
+      448,
+      768
+    ],
+    "1:1": [
+      576,
+      576
+    ],
+    "4:3": [
+      672,
+      512
+    ],
+    "3:4": [
+      512,
+      672
+    ],
+    "21:9": [
+      896,
+      384
+    ]
+  },
+  "est_seconds": 300,
+  "negative": "low quality, worst quality, deformed, distorted, disfigured, motion smear, motion artifacts, fused fingers, bad anatomy, weird hand, ugly",
+  "approx_vram": "2B-parameter model; the largest download is the T5-XXL text encoder (9.1 GB, or use a fp8 variant); VRAM not measured here",
+  "required_nodes": [
+    "CLIPLoader",
+    "CLIPTextEncode",
+    "CheckpointLoaderSimple",
+    "CreateVideo",
+    "KSamplerSelect",
+    "LTXVConditioning",
+    "LTXVImgToVideo",
+    "LTXVScheduler",
+    "LoadImage",
+    "SamplerCustom",
+    "SaveVideo",
+    "VAEDecode"
+  ],
+  "models": [
+    {
+      "id": "ckpt",
+      "node": "CheckpointLoaderSimple",
+      "input": "ckpt_name",
+      "folder": "models/checkpoints",
+      "size_gb": 6.34,
+      "candidates": [
+        "ltx-video-2b-v0.9.5.safetensors",
+        "ltx-video-2b-v0.9.1.safetensors",
+        "ltx-video-2b-v0.9.safetensors",
+        "ltxv-2b-0.9.6-dev-04-25.safetensors"
+      ],
+      "patterns": [],
+      "url": "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors"
+    },
+    {
+      "id": "clip",
+      "node": "CLIPLoader",
+      "input": "clip_name",
+      "folder": "models/text_encoders",
+      "size_gb": 9.12,
+      "candidates": [
+        "t5xxl_fp16.safetensors",
+        "t5xxl_fp8_e4m3fn_scaled.safetensors",
+        "t5xxl_fp8_e4m3fn.safetensors"
+      ],
+      "patterns": [
+        "t5xxl*.safetensors"
+      ],
+      "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors"
+    }
+  ],
+  "save_variants": [
+    {
+      "format": "mp4",
+      "format.codec": "h264"
+    },
+    {
+      "format": "auto",
+      "codec": "auto"
+    },
+    {
+      "format": "mp4"
+    }
+  ],
+  "graph": {
+    "44": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "{{model.ckpt}}"
+      }
+    },
+    "38": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "{{model.clip}}",
+        "type": "ltxv",
+        "device": "default"
+      }
+    },
+    "6": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{{prompt}}",
+        "clip": [
+          "38",
+          0
+        ]
+      }
+    },
+    "7": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{{negative}}",
+        "clip": [
+          "38",
+          0
+        ]
+      }
+    },
+    "70": {
+      "class_type": "EmptyLTXVLatentVideo",
+      "inputs": {
+        "width": "{{width}}",
+        "height": "{{height}}",
+        "length": "{{frames}}",
+        "batch_size": 1
+      }
+    },
+    "69": {
+      "class_type": "LTXVConditioning",
+      "inputs": {
+        "positive": [
+          "6",
+          0
+        ],
+        "negative": [
+          "7",
+          0
+        ],
+        "frame_rate": "{{fps}}"
+      }
+    },
+    "71": {
+      "class_type": "LTXVScheduler",
+      "inputs": {
+        "steps": 30,
+        "max_shift": 2.05,
+        "base_shift": 0.95,
+        "stretch": true,
+        "terminal": 0.1,
+        "latent": [
+          "70",
+          0
+        ]
+      }
+    },
+    "73": {
+      "class_type": "KSamplerSelect",
+      "inputs": {
+        "sampler_name": "euler"
+      }
+    },
+    "72": {
+      "class_type": "SamplerCustom",
+      "inputs": {
+        "model": [
+          "44",
+          0
+        ],
+        "add_noise": true,
+        "noise_seed": "{{seed}}",
+        "cfg": 3,
+        "positive": [
+          "69",
+          0
+        ],
+        "negative": [
+          "69",
+          1
+        ],
+        "sampler": [
+          "73",
+          0
+        ],
+        "sigmas": [
+          "71",
+          0
+        ],
+        "latent_image": [
+          "70",
+          0
+        ]
+      }
+    },
+    "8": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "72",
+          0
+        ],
+        "vae": [
+          "44",
+          2
+        ]
+      }
+    },
+    "57": {
+      "class_type": "CreateVideo",
+      "inputs": {
+        "images": [
+          "8",
+          0
+        ],
+        "fps": "{{fps}}"
+      }
+    },
+    "58": {
+      "class_type": "SaveVideo",
+      "inputs": {
+        "video": [
+          "57",
+          0
+        ],
+        "filename_prefix": "{{prefix}}",
+        "format": "mp4",
+        "format.codec": "h264"
+      }
+    }
+  },
+  "graph_i2v": {
+    "44": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "{{model.ckpt}}"
+      }
+    },
+    "38": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "{{model.clip}}",
+        "type": "ltxv",
+        "device": "default"
+      }
+    },
+    "6": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{{prompt}}",
+        "clip": [
+          "38",
+          0
+        ]
+      }
+    },
+    "7": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{{negative}}",
+        "clip": [
+          "38",
+          0
+        ]
+      }
+    },
+    "69": {
+      "class_type": "LTXVConditioning",
+      "inputs": {
+        "positive": [
+          "77",
+          0
+        ],
+        "negative": [
+          "77",
+          1
+        ],
+        "frame_rate": "{{fps}}"
+      }
+    },
+    "71": {
+      "class_type": "LTXVScheduler",
+      "inputs": {
+        "steps": 30,
+        "max_shift": 2.05,
+        "base_shift": 0.95,
+        "stretch": true,
+        "terminal": 0.1,
+        "latent": [
+          "77",
+          2
+        ]
+      }
+    },
+    "73": {
+      "class_type": "KSamplerSelect",
+      "inputs": {
+        "sampler_name": "euler"
+      }
+    },
+    "72": {
+      "class_type": "SamplerCustom",
+      "inputs": {
+        "model": [
+          "44",
+          0
+        ],
+        "add_noise": true,
+        "noise_seed": "{{seed}}",
+        "cfg": 3,
+        "positive": [
+          "69",
+          0
+        ],
+        "negative": [
+          "69",
+          1
+        ],
+        "sampler": [
+          "73",
+          0
+        ],
+        "sigmas": [
+          "71",
+          0
+        ],
+        "latent_image": [
+          "77",
+          2
+        ]
+      }
+    },
+    "8": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "72",
+          0
+        ],
+        "vae": [
+          "44",
+          2
+        ]
+      }
+    },
+    "57": {
+      "class_type": "CreateVideo",
+      "inputs": {
+        "images": [
+          "8",
+          0
+        ],
+        "fps": "{{fps}}"
+      }
+    },
+    "58": {
+      "class_type": "SaveVideo",
+      "inputs": {
+        "video": [
+          "57",
+          0
+        ],
+        "filename_prefix": "{{prefix}}",
+        "format": "mp4",
+        "format.codec": "h264"
+      }
+    },
+    "78": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "{{image}}"
+      }
+    },
+    "77": {
+      "class_type": "LTXVImgToVideo",
+      "inputs": {
+        "positive": [
+          "6",
+          0
+        ],
+        "negative": [
+          "7",
+          0
+        ],
+        "vae": [
+          "44",
+          2
+        ],
+        "image": [
+          "78",
+          0
+        ],
+        "width": "{{width}}",
+        "height": "{{height}}",
+        "length": "{{frames}}",
+        "batch_size": 1,
+        "strength": 0.15
+      }
+    }
+  },
+  "sources": [
+    "Comfy-Org/workflow_templates templates/ltxv_text_to_video.json + ltxv_image_to_video.json",
+    "https://huggingface.co/Lightricks/LTX-Video"
+  ]
+}

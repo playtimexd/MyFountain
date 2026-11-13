@@ -1,0 +1,47 @@
+.modal-back { position: fixed; inset: 0; background: rgba(4, 5, 8, .62); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: ui-fade .12s ease-out; }
+.modal { background: var(--bg-1); border: 1px solid var(--line-2); border-radius: var(--radius-lg); width: min(920px, 94vw); max-height: 90vh; display: flex; flex-direction: column; box-shadow: var(--shadow-3); animation: ui-pop .14s var(--ease); }
+.modal > header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 600; }
+.modal > .body { padding: 16px; overflow: auto; }
+@keyframes ui-fade { from { opacity: 0 } }
+@keyframes ui-pop { from { opacity: 0; transform: translateY(6px) scale(.985) } }
+
+.seg-tabs { display: flex; gap: 2px; padding: 2px; background: var(--bg-inset); border-radius: 7px; border: 1px solid var(--line); width: fit-content; }
+.seg-tabs button { border: 0; background: transparent; color: var(--text-dim); padding: 3px 10px; white-space: nowrap; min-height: 24px; border-radius: 5px; cursor: pointer; font-weight: 500; transition: background .12s, color .12s; }
+.seg-tabs button:hover { color: var(--text); background: var(--hover); }
+.seg-tabs button.on { background: var(--bg-3); color: #fff; box-shadow: var(--shadow-1), inset 0 0 0 1px rgba(255, 255, 255, .05); }
+
+/* ---- app shell ----------------------------------------------------------------------------- */
+.shell { display: flex; flex-direction: column; height: 100%; }
+.topbar { display: flex; align-items: center; gap: 14px; height: 42px; padding: 0 10px 0 14px; background: var(--bg-1); border-bottom: 1px solid var(--line); flex: none; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: .2px; flex: none; padding-right: 14px; border-right: 1px solid var(--line); height: 20px; }
+.logo { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
+.topbar nav { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.topbar nav::-webkit-scrollbar { display: none; }
+.tab { position: relative; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border-radius: 6px; border: 0; background: transparent; color: var(--text-dim);
+  cursor: pointer; white-space: nowrap; font-weight: 500; flex: none; transition: background .12s, color .12s; }
+.tab:hover { background: var(--hover); color: var(--text); }
+.tab.on { background: var(--bg-3); color: #fff; }
+.tab.on > svg { color: var(--accent-text); }
+.tab.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -6px; height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
+.engine { display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 9px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text-dim); font-size: 11.5px; white-space: nowrap; flex: none; }
+.engine.bad { color: #ffb3bb; border-color: rgba(255, 92, 108, .4); background: var(--danger-soft); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(60, 207, 142, .15); }
+.dot.bad { background: var(--danger); box-shadow: 0 0 0 3px rgba(255, 92, 108, .18); }
+.stage { flex: 1; min-height: 0; position: relative; }
+.page { position: absolute; inset: 0; flex-direction: column; min-height: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
+
+/* narrow windows: tab labels collapse to icons (the active tab keeps its label), status → dot only */
+@media (max-width: 1240px) {
+  .engine .engine-label { display: none; }
+  .engine { padding: 0 8px; }
+}
+@media (max-width: 1140px) {
+  .tab:not(.on) .tab-label { display: none; }
+  .tab:not(.on) { padding: 0 9px; }
+}
+@media (max-width: 760px) {
+  .brand .brand-name { display: none; }
+}

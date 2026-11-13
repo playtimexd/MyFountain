@@ -1,0 +1,392 @@
+{
+  "id": "wan22_ti2v_5b_gguf",
+  "name": "Wan 2.2 TI2V-5B (GGUF Q4, low VRAM)",
+  "description": "Same workflow with a quantised GGUF diffusion model (3.4 GB instead of 9.3 GB). Requires the ComfyUI-GGUF custom node.",
+  "family": "wan",
+  "modes": [
+    "t2v",
+    "i2v"
+  ],
+  "fps": 24,
+  "frame_multiple": 4,
+  "max_seconds": 6,
+  "sizes": {
+    "16:9": [
+      832,
+      480
+    ],
+    "9:16": [
+      480,
+      832
+    ],
+    "1:1": [
+      640,
+      640
+    ],
+    "4:3": [
+      704,
+      544
+    ],
+    "3:4": [
+      544,
+      704
+    ],
+    "21:9": [
+      960,
+      416
+    ]
+  },
+  "est_seconds": 420,
+  "negative": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+  "approx_vram": "Q4_K_M weights are 3.4 GB; leaves the most headroom on a shared GPU (needs the custom node city96/ComfyUI-GGUF)",
+  "required_nodes": [
+    "CLIPLoader",
+    "CLIPTextEncode",
+    "CreateVideo",
+    "KSampler",
+    "LoadImage",
+    "ModelSamplingSD3",
+    "SaveVideo",
+    "UnetLoaderGGUF",
+    "VAEDecode",
+    "VAELoader",
+    "Wan22ImageToVideoLatent"
+  ],
+  "models": [
+    {
+      "id": "unet",
+      "node": "UnetLoaderGGUF",
+      "input": "unet_name",
+      "folder": "models/unet",
+      "size_gb": 3.43,
+      "candidates": [
+        "Wan2.2-TI2V-5B-Q4_K_M.gguf",
+        "Wan2.2-TI2V-5B-Q5_K_M.gguf",
+        "Wan2.2-TI2V-5B-Q4_K_S.gguf",
+        "Wan2.2-TI2V-5B-Q4_0.gguf",
+        "Wan2.2-TI2V-5B-Q6_K.gguf",
+        "Wan2.2-TI2V-5B-Q8_0.gguf",
+        "Wan2.2-TI2V-5B-Q3_K_M.gguf"
+      ],
+      "patterns": [
+        "*ti2v*5b*.gguf"
+      ],
+      "url": "https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF/resolve/main/Wan2.2-TI2V-5B-Q4_K_M.gguf"
+    },
+    {
+      "id": "clip",
+      "node": "CLIPLoader",
+      "input": "clip_name",
+      "folder": "models/text_encoders",
+      "size_gb": 6.27,
+      "candidates": [
+        "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "umt5_xxl_fp16.safetensors"
+      ],
+      "patterns": [
+        "umt5*xxl*.safetensors"
+      ],
+      "url": "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+    },
+    {
+      "id": "vae",
+      "node": "VAELoader",
+      "input": "vae_name",
+      "folder": "models/vae",
+      "size_gb": 1.31,
+      "candidates": [
+        "wan2.2_vae.safetensors"
+      ],
+      "patterns": [],
+      "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors"
+    }
+  ],
+  "save_variants": [
+    {
+      "format": "mp4",
+      "format.codec": "h264"
+    },
+    {
+      "format": "auto",
+      "codec": "auto"
+    },
+    {
+      "format": "mp4"
+    }
+  ],
+  "graph": {
+    "37": {
+      "class_type": "UnetLoaderGGUF",
+      "inputs": {
+        "unet_name": "{{model.unet}}"
+      }
+    },
+    "38": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "{{model.clip}}",
+        "type": "wan",
+        "device": "default"
+      }
+    },
+    "39": {
+      "class_type": "VAELoader",
+      "inputs": {
+        "vae_name": "{{model.vae}}"
+      }
+    },
+    "48": {
+      "class_type": "ModelSamplingSD3",
+      "inputs": {
+        "model": [
+          "37",
+          0
+        ],
+        "shift": 8
+      }
+    },
+    "6": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{{prompt}}",
+        "clip": [
+          "38",
+          0
+        ]
+      }
+    },
+    "7": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{{negative}}",
+        "clip": [
+          "38",
+          0
+        ]
+      }
+    },
+    "55": {
+      "class_type": "Wan22ImageToVideoLatent",
+      "inputs": {
+        "vae": [
+          "39",
+          0
+        ],
+        "width": "{{width}}",
+        "height": "{{height}}",
+        "length": "{{frames}}",
+        "batch_size": 1
+      }
+    },
+    "3": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "48",
+          0
+        ],
+        "seed": "{{seed}}",
+        "steps": 20,
+        "cfg": 5,
+        "sampler_name": "uni_pc",
+        "scheduler": "simple",
+        "positive": [
+          "6",
+          0
+        ],
+        "negative": [
+          "7",
+          0
+        ],
+        "latent_image": [
+          "55",
+          0
+        ],
+        "denoise": 1
+      }
+    },
+    "8": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "3",
+          0
+        ],
+        "vae": [
+          "39",
+          0
+        ]
+      }
+    },
+    "57": {
+      "class_type": "CreateVideo",
+      "inputs": {
+        "images": [
+          "8",
+          0
+        ],
+        "fps": "{{fps}}"
+      }
+    },
+    "58": {
+      "class_type": "SaveVideo",
+      "inputs": {
+        "video": [
+          "57",
+          0
+        ],
+        "filename_prefix": "{{prefix}}",
+        "format": "mp4",
+        "format.codec": "h264"
+      }
+    }
+  },
+  "graph_i2v": {
+    "37": {
+      "class_type": "UnetLoaderGGUF",
+      "inputs": {
+        "unet_name": "{{model.unet}}"
+      }
+    },
+    "38": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "{{model.clip}}",
+        "type": "wan",
+        "device": "default"
+      }
+    },
+    "39": {
+      "class_type": "VAELoader",
+      "inputs": {
+        "vae_name": "{{model.vae}}"
+      }
+    },
+    "48": {
+      "class_type": "ModelSamplingSD3",
+      "inputs": {
+        "model": [
+          "37",
+          0
+        ],
+        "shift": 8
+      }
+    },
+    "6": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{{prompt}}",
+        "clip": [
+          "38",
+          0
+        ]
+      }
+    },
+    "7": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "{{negative}}",
+        "clip": [
+          "38",
+          0
+        ]
+      }
+    },
+    "55": {
+      "class_type": "Wan22ImageToVideoLatent",
+      "inputs": {
+        "vae": [
+          "39",
+          0
+        ],
+        "width": "{{width}}",
+        "height": "{{height}}",
+        "length": "{{frames}}",
+        "batch_size": 1,
+        "start_image": [
+          "56",
+          0
+        ]
+      }
+    },
+    "3": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "48",
+          0
+        ],
+        "seed": "{{seed}}",
+        "steps": 20,
+        "cfg": 5,
+        "sampler_name": "uni_pc",
+        "scheduler": "simple",
+        "positive": [
+          "6",
+          0
+        ],
+        "negative": [
+          "7",
+          0
+        ],
+        "latent_image": [
+          "55",
+          0
+        ],
+        "denoise": 1
+      }
+    },
+    "8": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "3",
+          0
+        ],
+        "vae": [
+          "39",
+          0
+        ]
+      }
+    },
+    "57": {
+      "class_type": "CreateVideo",
+      "inputs": {
+        "images": [
+          "8",
+          0
+        ],
+        "fps": "{{fps}}"
+      }
+    },
+    "58": {
+      "class_type": "SaveVideo",
+      "inputs": {
+        "video": [
+          "57",
+          0
+        ],
+        "filename_prefix": "{{prefix}}",
+        "format": "mp4",
+        "format.codec": "h264"
+      }
+    },
+    "56": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "{{image}}"
+      }
+    }
+  },
+  "sources": [
+    "https://docs.comfy.org/tutorials/video/wan/wan2_2",
+    "Comfy-Org/workflow_templates templates/video_wan2_2_5B_ti2v.json"
+  ],
+  "custom_nodes": [
+    {
+      "name": "ComfyUI-GGUF",
+      "repo": "https://github.com/city96/ComfyUI-GGUF",
+      "provides": "UnetLoaderGGUF"
+    }
+  ]
+}
