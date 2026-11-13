@@ -474,13 +474,13 @@ def lock_weight(c, ramp, E0, tgt, leg, far=0.6):
     far from where the source puts it: a foot still sweeping in before it plants (a mantle's foot reaching the ledge was
     pulled a full leg length in one frame) or already peeling off.  Ordinary drift of a planted source foot (in-place
     sources with recovered travel slide 1-2 m/s) stays locked: full below far/2 of the leg, none beyond `far`.  Sources
-    that do not travel at all pass a larger `far` - there the lock stands in for the missing root motion.  Eroded then
-    smoothed over the same window, so the result is never above the gated weight and has no steps."""
-    w = soft_mask(c, ramp)
-    dev = np.linalg.norm(tgt - E0, axis=1) / leg
-    w = w * np.clip((far - dev) / (0.5 * far), 0.0, 1.0)
+    that do not travel at all pass a larger `far` - there the lock stands in for the missing root motion.  The gate is
+    eroded then smoothed over the same window, so it never exceeds its raw value and has no steps."""
+    dev = np.linalg.norm(tgt[:, :2] - E0[:, :2], axis=1) / leg     # sideways only: pulling a foot up out of a ledge is the lock's job
+    g = np.clip((far - dev) / (0.5 * far), 0.0, 1.0)
     r = max(1, ramp // 2)
-    return np.clip(_hann_smooth(_erode(w, r), r), 0.0, 1.0)
+    # only the gate is eroded / smoothed: easing the contact mask itself left a landing foot in the ledge for 2 frames
+    return np.clip(soft_mask(c, ramp) * _hann_smooth(_erode(g, r), r), 0.0, 1.0)
 
 
 def soft_reach(dist, l1, l2, src, soft=0.04):
@@ -665,10 +665,15 @@ def detect_contacts(h, leg_len, T, xy=None, fps=30.0, travels=False):
         v = np.convolve(np.pad(v, 1, mode="edge"), np.ones(3) / 3, mode="valid")
         thr = float(np.clip(0.25 * np.percentile(v, 90), 0.4 * leg_len, 1.0 * leg_len))
         cv = _deblip(c & (v < thr)) & c
-        # an in-place source whose travel could not be recovered has planted feet that move backwards: keep height-only.
-        # Not when the body really travels: a low-swinging run (GASP toes skim 6-9 cm over the floor) is mostly "low" frames
-        # that move at 6 m/s, and height-only froze that foot on one spot for a second while the body ran on.
-        if travels or cv.sum() >= 0.3 * max(c.sum(), 1):
+        still = cv.sum() / max(c.sum(), 1)
+        if travels:
+            # the body really travels (direct transfer of an animation file).  A foot that never stands still anywhere comes
+            # from an in-place source with reconstructed travel (ALS / Lyra runs drift 0.2-1.2x body speed while planted):
+            # height-only, the lock stands in.  A foot that does stand still has real root motion; then a low stretch that
+            # never stops is a toe skimming the floor (GASP runs: 6 m/s) - planting it froze that foot while the body ran on.
+            return c, (c.copy() if still < 0.05 else cv)
+        # an in-place source whose travel could not be recovered has planted feet that move backwards: keep height-only
+        if still >= 0.3:
             settled = cv.copy()
             t = 0
             while t < T:                                # a low stretch that never stands still (rolling, sliding): all of it
@@ -991,8 +996,8 @@ def solve(arm, motion, bone_map, opts, ctx_notes):
     Hd = H.copy()
     # the pelvis covers more than a leg length.  Animation files only: poses estimated from video jitter so much that their
     # planted feet rarely read as still, and the lock (at full weight) is what keeps them planted
-    src_travels = bool(opts.get("terrain")) and bool(np.ptp(Pw[:, root_j, :2], axis=0).max() > 1.0 * leg_len_s)
-    if opts.get("_ab_notravel"): src_travels = False  # AB-TEMP
+    # direct transfers only: a solved walk (Epic mocap on Manny) sank 6 % into the floor once its plant spots moved
+    src_travels = direct is not None and bool(opts.get("terrain")) and bool(np.ptp(Pw[:, root_j, :2], axis=0).max() > 1.0 * leg_len_s)
     for k, l in enumerate(legs):
         # always detected: the metrics need them even when no clean-up runs (direct transfers of clean mocap)
         # contact_gate False = the old height-only behaviour (kept for A/B checks)
@@ -1070,12 +1075,10 @@ def solve(arm, motion, bone_map, opts, ctx_notes):
                 # direct transfers only: there E0 is the source file's own foot.  A solved foot (joint positions, video, BVH of
                 # another skeleton) can sit in the floor or off its spot, and the full-weight lock is what puts it back
                 ws = lock_weight(c, ramp, E0, plant, l1 + l2, 0.6 if src_travels else 1.5) if direct is not None else soft_mask(c, ramp)
-                if opts.get("_ab_nogate"): ws = soft_mask(c, ramp)  # AB-TEMP
                 tgt = E0 * (1 - ws[:, None]) + plant * ws[:, None]
                 v = tgt - A
                 dist = np.linalg.norm(v, axis=1)
                 dc = soft_reach(dist, l1, l2, np.linalg.norm(E0 - A, axis=1))
-                if opts.get("_ab_nosoft"): dc = np.clip(dist, abs(l1 - l2) + 1e-4, (l1 + l2) * 0.9999)  # AB-TEMP
                 u = v / np.maximum(dist, EPS)[:, None]
                 # bend-plane pole: the rest-pose bend direction carried along by the thigh's own rotation (no flipping)
                 e_rest = rig.head[F_] - rig.head[U_]
@@ -1084,10 +1087,10 @@ def solve(arm, motion, bone_map, opts, ctx_notes):
                 if np.linalg.norm(n_rest) < 0.02 * max(np.linalg.norm(e_rest), EPS):
                     n_rest = np.append(fwd_rest, 0.0) * (1.0 if sroles[jn[l["joint"]]]["limb"] != "front" else -1.0)
                 pole = np.einsum("tij,j->ti", Wm[U_] @ rig.R[U_].T, nrm(n_rest))
-                # where the source's own knee points, once it is bent by more than ~2 % of the leg; the rest-pose pole only
+                # where the source's own knee points, once it is bent by more than ~5 % of the leg; the rest-pose pole only
                 # steers near-straight legs (soft reach bends a pinned straight leg a little - the wrong way on an in-place turn)
                 kb = (K0 - A) - ((K0 - A) * nrm(E0 - A)).sum(1, keepdims=True) * nrm(E0 - A)
-                pole = pole if opts.get("_ab_nopole") else kb + 0.02 * (l1 + l2) * pole  # AB-TEMP
+                pole = kb + 0.05 * (l1 + l2) * pole
                 n = pole - (pole * u).sum(1, keepdims=True) * u
                 bad = np.linalg.norm(n, axis=1) < 1e-5
                 n = np.where(bad[:, None], nrm(np.cross(u, np.array([1.0, 0, 0]))), nrm(n))
