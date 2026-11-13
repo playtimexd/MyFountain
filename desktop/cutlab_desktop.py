@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import updater  # noqa: E402
-from engine import (DESKTOP, ICON, ROOT, Engine, app_home, busy_jobs, data_dir, http_json, load_config,  # noqa: E402
+from engine import (DESKTOP, ICON, NOWIN, ROOT, Engine, app_home, busy_jobs, data_dir, load_config,  # noqa: E402
                     pid_alive, save_config)
 
 UI = DESKTOP / "ui"
@@ -91,7 +91,6 @@ class App:
         self.data = data_dir(self.cfg)
         self.engine = Engine(self.data, self.state.log)
         self.window = None                # pywebview window
-        self.edge: subprocess.Popen | None = None
         self.mode = ""
         self.control_url = ""
         self.quitting = False
@@ -230,8 +229,8 @@ class App:
         self.force_quit = self.force_quit or force
         if self.window is not None:
             self.window.destroy()
-        elif self.edge is not None:
-            subprocess.run(["taskkill", "/PID", str(self.edge.pid), "/T", "/F"], capture_output=True)
+        elif self.mode == "edge":
+            close_edge_windows(self.log)
 
     def on_closing(self) -> bool:
         """pywebview closing event: returning False keeps the window open."""
@@ -428,15 +427,40 @@ def find_edge() -> str | None:
     return None
 
 
-def open_edge_window(url: str, log) -> subprocess.Popen | None:
+EDGE_PROFILE = app_home() / "edge-profile"
+
+
+def open_edge_window(url: str, log) -> bool:
     edge = find_edge()
     if not edge:
         log("Microsoft Edge not found - opening the default browser")
         os.startfile(url)                                                          # noqa: S606
-        return None
-    prof = app_home() / "edge-profile"
-    return subprocess.Popen([edge, f"--app={url}", f"--user-data-dir={prof}", "--no-first-run", "--no-default-browser-check",
-                             "--disable-background-mode", "--window-size=1440,900"])
+        return False
+    subprocess.Popen([edge, f"--app={url}", f"--user-data-dir={EDGE_PROFILE}", "--no-first-run", "--no-default-browser-check",
+                      "--disable-background-mode", "--window-size=1440,900"])
+    return True
+
+
+def edge_running() -> bool:
+    """Edge relaunches itself, so its first process says nothing. While a browser runs on our profile it holds
+    <profile>\lockfile open exclusively; once all its windows are closed the file can be deleted."""
+    lf = EDGE_PROFILE / "lockfile"
+    if not lf.exists():
+        return False
+    try:
+        lf.unlink()
+        return False
+    except OSError:
+        return True
+
+
+def close_edge_windows(log) -> None:
+    """Stop the Edge processes that use our profile (never the user's own Edge)."""
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -like '*"
+          + str(EDGE_PROFILE).replace("'", "''") + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force "
+          "-ErrorAction SilentlyContinue }")
+    subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, **NOWIN)
+    log("closed the Edge app window")
 
 
 def spawn_launcher(extra: list[str]) -> None:
@@ -508,9 +532,13 @@ def main() -> None:
             run_webview(app, webview, first_page)
         else:
             app.mode = "edge"
-            app.edge = open_edge_window(app.control_url + first_page, app.log)
-            if app.edge:
-                app.edge.wait()
+            if open_edge_window(app.control_url + first_page, app.log):
+                for _ in range(60):                  # wait for the browser to come up ...
+                    if edge_running():
+                        break
+                    time.sleep(0.5)
+                while edge_running() and not app.force_quit:   # ... and run until its last window is closed
+                    time.sleep(1)
             else:                                    # default browser: nothing to wait on - keep serving until quit
                 while not app.force_quit:
                     time.sleep(1)
