@@ -37,7 +37,11 @@ cd CutLab
 - 再次双击快捷方式只会把已打开的窗口切到前台。
 
 窗口菜单 **CutLab**：Check for updates…、Reload、Data folder…、Open data folder、Open log folder、Restart engine、Quit。
-`--edge` 强制用 Edge 窗口；`--update` 直接打开更新页。
+`--edge` 强制用 Edge 窗口；`--update` 直接打开更新页。引擎被别的脚本重启时，窗口会自动重新连上（同一数据目录、同一端口）。
+
+- **已有安装（原来用 `start.ps1` 的机器）**：拉下这个版本后运行一次 `.\setup.ps1`（或直接双击快捷方式）。现有 `backend\.venv`、`node_modules` 和 `data\` 都会沿用；只会补装 `pywebview`（约 1 MB）并写入依赖标记。
+- **Edge 回退窗口**的限制：关闭窗口时不会因为有任务在跑而先确认；任务栏图标是 Edge 的。装好 pywebview 就没有这些问题。
+- 窗口里的浏览器存储（界面布局、最近打开的标签等）在 `%LOCALAPPDATA%\CutLab\webview\`，按引擎端口区分；项目本身都在数据目录里。
 
 ### 数据目录（全部在本机）
 
