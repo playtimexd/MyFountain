@@ -204,7 +204,7 @@ class App:
 
     # ---------------------------------------------------------------- window helpers
     def show_page(self, path: str, new_edge_window: bool = True) -> None:
-        url = self.control_url + path
+        url = f"{self.control_url}{path}{'&' if '?' in path else '?'}t={int(time.time() * 1000)}"   # same URL would not reload
         if self.window is not None:
             try:
                 self.window.load_url(url)

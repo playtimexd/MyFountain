@@ -220,9 +220,7 @@ async function applyUpdate() {
   $('u-apply').disabled = true; $('u-check').disabled = true
   const r = await post('/api/update/apply')
   if (r.error) { $('u-result').insertAdjacentHTML('afterbegin', `<div class="note err">${esc(r.error)}</div>`); $('u-check').disabled = false; return }
-  $('u-progress').classList.remove('hidden')
-  $('u-btns').classList.add('hidden')
-  pollUpdate()
+  followUpdate()
 }
 
 async function pollUpdate() {
@@ -233,7 +231,6 @@ async function pollUpdate() {
   if (u.done || (!u.running && (u.ok || u.error))) {
     if (u.error) {
       $('u-progress-title').innerHTML = `<span class="err">Update failed</span>`
-      $('u-log').insertAdjacentText('beforebegin', '')
       $('u-result').innerHTML = `<div class="note err">${esc(u.error)}</div>`
       $('u-btns').classList.remove('hidden'); $('u-check').disabled = false
       return
@@ -273,8 +270,25 @@ async function saveDataDir() {
 }
 
 if (view === 'start') pollStart()
+let following = false
+function followUpdate() {
+  if (following) return
+  following = true
+  $('u-progress').classList.remove('hidden'); $('u-btns').classList.add('hidden')
+  pollUpdate()
+}
+async function watchForUpdate() {      // an update can also be started from the menu or another window
+  if (following) return
+  const s = await getState()
+  if (s?.update?.running) followUpdate()
+  else setTimeout(watchForUpdate, 1000)
+}
 if (view === 'update') {
-  getState().then((s) => { $('u-version').textContent = s?.version || '?'; if (s?.update?.running) { $('u-progress').classList.remove('hidden'); $('u-btns').classList.add('hidden'); pollUpdate() } else checkUpdates() })
+  getState().then((s) => {
+    $('u-version').textContent = s?.version || '?'
+    if (s?.update?.running) followUpdate()
+    else { checkUpdates(); setTimeout(watchForUpdate, 1000) }
+  })
 }
 if (view === 'quit') initQuit()
 if (view === 'settings') initSettings()
