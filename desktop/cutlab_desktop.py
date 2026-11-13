@@ -152,16 +152,46 @@ class App:
         while not self.quitting:
             time.sleep(3)
             e = self.engine
-            if self.state.phase == "ready" and e.proc is not None and e.proc.poll() is not None and not self.quitting:
-                code = e.proc.returncode
-                time.sleep(5)                       # restarted from outside (script, another tool)? then just re-attach
-                h = health(e.base)
-                if h and (not h.get("data") or same_path(h["data"], self.data)) and not self.quitting:
-                    e.proc, e.pid, e.owned = None, h.get("pid") or pid_on_port(e.port), False
-                    self.state.log(f"the engine was restarted outside the app - attached to it (pid {e.pid})")
+            if self.state.phase == "error" and not self.boot_lock.locked() and self._reattach():
+                self.state.set("ready", "Ready")    # someone (a script, another tool) started the engine again
+                continue
+            if self.state.phase != "ready" or self.quitting or self.state.update["running"]:
+                continue
+            if e.proc is not None:                  # ours: did the process exit?
+                if e.proc.poll() is None:
                     continue
-                self.state.set("error", "The engine stopped unexpectedly.", f"exit code {code}\n\n{e.tail(25)}")
-                self.show_page("/", new_edge_window=False)
+                why = f"exit code {e.proc.returncode}"
+            else:                                   # attached: does it still answer?
+                if health(e.base, 5) or health(e.base, 5):
+                    continue
+                why = "it stopped answering"
+            self.state.set("starting", "The engine stopped - reconnecting…", why)
+            back = False
+            for _ in range(60):                     # restarted from outside (a script, another tool)? re-attach
+                if self.quitting or self.state.phase != "starting":
+                    break
+                if self._reattach():
+                    back = True
+                    break
+                time.sleep(1)
+            if self.quitting or self.state.phase != "starting":
+                continue
+            if back:
+                self.state.set("ready", "Ready")
+                continue
+            self.state.set("error", "The engine stopped unexpectedly.", f"{why}\n\n{e.tail(25)}")
+            self.show_page("/", new_edge_window=False)
+
+    def _reattach(self) -> bool:
+        """Attach to an engine on our port that serves our data folder (started outside the app)."""
+        e = self.engine
+        h = health(e.base, 1.5)
+        if not h or (h.get("data") and not same_path(h["data"], self.data)):
+            return False
+        e.proc, e.pid, e.owned = None, h.get("pid") or pid_on_port(e.port), False
+        self.state.log(f"engine on :{e.port} was started outside the app - attached to it (pid {e.pid})")
+        self.write_lock()
+        return True
 
     # ---------------------------------------------------------------- update
     def start_update(self) -> str:
