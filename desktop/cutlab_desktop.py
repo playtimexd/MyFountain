@@ -27,8 +27,8 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import updater  # noqa: E402
-from engine import (DESKTOP, ICON, NOWIN, ROOT, Engine, app_home, busy_jobs, data_dir, load_config,  # noqa: E402
-                    pid_alive, save_config)
+from engine import (DESKTOP, ICON, NOWIN, ROOT, Engine, app_home, busy_jobs, data_dir, health, load_config,  # noqa: E402
+                    pid_alive, pid_on_port, same_path, save_config)
 
 UI = DESKTOP / "ui"
 APP_ID = "CutLab.Desktop"
@@ -153,7 +153,14 @@ class App:
             time.sleep(3)
             e = self.engine
             if self.state.phase == "ready" and e.proc is not None and e.proc.poll() is not None and not self.quitting:
-                self.state.set("error", "The engine stopped unexpectedly.", f"exit code {e.proc.returncode}\n\n{e.tail(25)}")
+                code = e.proc.returncode
+                time.sleep(5)                       # restarted from outside (script, another tool)? then just re-attach
+                h = health(e.base)
+                if h and (not h.get("data") or same_path(h["data"], self.data)) and not self.quitting:
+                    e.proc, e.pid, e.owned = None, h.get("pid") or pid_on_port(e.port), False
+                    self.state.log(f"the engine was restarted outside the app - attached to it (pid {e.pid})")
+                    continue
+                self.state.set("error", "The engine stopped unexpectedly.", f"exit code {code}\n\n{e.tail(25)}")
                 self.show_page("/", new_edge_window=False)
 
     # ---------------------------------------------------------------- update

@@ -154,6 +154,14 @@ def build_frontend(log: Log) -> None:
     shutil.rmtree(old, ignore_errors=True)
 
 
+def _npm_tree_ok() -> bool:
+    try:
+        return subprocess.run([npm(), "ls", "--depth=0"], cwd=str(FRONTEND), capture_output=True, timeout=120,
+                              **NOWIN).returncode == 0
+    except Exception:
+        return False
+
+
 def sync(log: Log = print, force: bool = False) -> dict:
     needs = sync_needs()
     if force:
@@ -164,6 +172,10 @@ def sync(log: Log = print, force: bool = False) -> dict:
         log("Installing Python packages…")
         pip_install(log)
         PY_STAMP.write_text(_hash(PY_REQS), "utf-8")
+    if needs["node"] and not force and not NODE_STAMP.exists() and (FRONTEND / "node_modules").exists() and _npm_tree_ok():
+        log("Frontend packages already installed (npm ls ok).")      # existing dev install: do not wipe it with npm ci
+        NODE_STAMP.write_text(_hash(NODE_FILES), "utf-8")
+        needs["node"] = False
     if needs["node"]:
         log("Installing frontend packages (npm ci)…")
         run([npm(), "ci", "--no-audit", "--no-fund"], FRONTEND, log)
@@ -329,3 +341,4 @@ if __name__ == "__main__":
             print("warning:", w)
         if out["blocked"]:
             print("blocked:", out["blocked"])
+            sys.exit(2)

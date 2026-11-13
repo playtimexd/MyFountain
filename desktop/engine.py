@@ -132,6 +132,19 @@ def kill_tree(pid: int) -> None:
             pass
 
 
+def pid_on_port(port: int) -> int | None:
+    """PID listening on 127.0.0.1:<port> (for engines whose /api/health predates the "pid" field)."""
+    try:
+        out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True, timeout=10, **NOWIN).stdout
+    except Exception:
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 5 and parts[3].upper() == "LISTENING" and parts[1].rsplit(":", 1)[-1] == str(port):
+            return int(parts[4])
+    return None
+
+
 def pid_alive(pid: int) -> bool:
     if os.name == "nt":
         r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, **NOWIN)
@@ -168,7 +181,7 @@ class Engine:
         h = health(f"http://127.0.0.1:{preferred}")
         if h:
             if not h.get("data") or same_path(h["data"], self.data):
-                self.port, self.pid, self.owned = preferred, h.get("pid"), False
+                self.port, self.pid, self.owned = preferred, h.get("pid") or pid_on_port(preferred), False
                 self.log(f"attached to running engine on :{preferred} (pid {self.pid})")
                 return "attached"
             self.log(f"port {preferred}: a CutLab engine with another data folder ({h['data']}) - using a free port")
