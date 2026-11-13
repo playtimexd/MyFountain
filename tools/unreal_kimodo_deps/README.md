@@ -10,7 +10,7 @@
 # 1) 把插件装进项目，并在 .uproject 里启用（会先备份 .uproject）
 .\install_kimodo_deps.ps1 -Project "F:\UNREAL PROJECTS\MyProject3\MyProject3.uproject"
 
-# 2) 可选：先关掉编辑器，现在就装好（第一次约 4 GB）。不做这一步的话，下次打开编辑器时会自动装，期间编辑器会一直等着装完
+# 2) 可选：先关掉打开这个项目的编辑器（其他项目的编辑器可以开着），现在就装好（第一次约 4 GB）。不做这一步的话，下次打开编辑器时会自动装，期间编辑器会一直等着装完
 .\install_kimodo_deps.ps1 -Project "F:\UNREAL PROJECTS\MyProject3" -InstallNow
 ```
 
@@ -50,4 +50,9 @@
 - 在临时测试项目上运行 `install_kimodo_deps.ps1`：插件复制和 .uproject 修改都正常，重复运行结果不变。
 - 用 UnrealEditor-Cmd 在测试项目上无界面启动（离线模式，不下载）：UE 加载了插件，合并了 78 条带哈希的依赖，
   写入了指向插件 site-packages 的 `.pth`，并用 `--require-hashes` 调用了 pip。启动检查脚本按预期报告“缺少的包”。
-- 还没做的：真正下载约 4 GB 的完整安装。
+- 实际安装（`D:\Jersey Test\MyProject3`，UE 5.8，Python 同为 3.11.8）：`-InstallNow` 装好 78 个包，`pip check` 没有冲突；
+  torch 2.11.0+cu128 报告 `CUDA True`。之后无界面启动编辑器：UE 自己按同样参数执行的 pip 判定全部“已满足”；
+  在 UE 里 numpy、scipy、torch、hydra、omegaconf、transformers、peft、einops、trimesh、bvhio、av、tqdm 都能导入，
+  显示 “CUDA 12.8 on NVIDIA GeForce RTX 3090 Ti”。
+- 第一次打开编辑器时，UE 会装一次自己的辅助工具：先把 packaging 换成 23.1，随后又按锁定版本换回 26.3。
+  第二次启动不再重装，日志里 0 个错误、0 个警告。

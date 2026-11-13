@@ -77,8 +77,11 @@ if (-not $InstallNow) {
 }
 
 # --- 3. install now, the way the editor would
-$running = Get-Process -Name 'UnrealEditor*' -ErrorAction SilentlyContinue
-if ($running) { throw 'Close the Unreal editor first: it uses the same Python environment.' }
+# only an editor that has THIS project open uses its Python environment (other projects' editors may keep running)
+$projKey = $uproject.Replace('\', '/').ToLower()
+$running = Get-CimInstance Win32_Process -Filter "Name LIKE 'UnrealEditor%'" |
+    Where-Object { $_.CommandLine -and $_.CommandLine.Replace('\', '/').ToLower().Contains($projKey) }
+if ($running) { throw "Close the Unreal editor that has this project open first (pid $($running.ProcessId -join ', ')): it uses the same Python environment." }
 if (-not $EnginePath) {
     $assoc = $desc.EngineAssociation
     if (-not $assoc) { throw 'The .uproject has no EngineAssociation; pass -EnginePath "C:\Program Files\Epic Games\UE_5.x"' }
