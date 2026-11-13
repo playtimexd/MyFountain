@@ -53,6 +53,9 @@ cd CutLab
 | 2 | `%LOCALAPPDATA%\CutLab\desktop.json` 里的 `"data_dir"`（`setup.ps1 -DataDir "D:\CutLab Data"`，或应用里 Settings → App → Data folder…） |
 | 3 | 默认：程序目录下的 `data\`（已被 `.gitignore` 忽略，永远不会被提交或被更新改动） |
 
+窗口标题显示当前数据目录。启动时如果数据目录里还没有 CutLab 库（没有 `cutlab.db`），或 `desktop.json` 读不了（比如 JSON 里写了单个 `\`——路径请用 `/` 或 `\\`），
+启动页会先停下来说明情况，并列出本机已有的库（用过的库记录在 `%LOCALAPPDATA%\CutLab\libraries.json`，加上程序目录的 `data\` 和 `desktop.json` 里的目录）供一键切换，不会悄悄打开一个空库。
+
 更换数据目录不会搬文件：先关掉 CutLab，把旧目录内容复制过去再切换。`%LOCALAPPDATA%\CutLab\` 里还有启动器日志（`desktop.log`）和窗口的浏览器存储（`webview\`）。
 引擎（`python -m app`）、MCP 服务器和启动器用同一套规则，所以三者总是看到同一个数据目录。
 

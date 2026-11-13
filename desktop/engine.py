@@ -54,21 +54,69 @@ DEFAULTS = {
 
 
 def load_config() -> dict:
+    """Launcher config. A file that cannot be parsed is not silently ignored: "_error" says why (shown at start-up)."""
     cfg = dict(DEFAULTS)
-    try:
-        cfg.update(json.loads(config_path().read_text("utf-8")))
-    except Exception:
-        pass
+    p = config_path()
+    if p.exists():
+        try:
+            data = json.loads(p.read_text("utf-8-sig"))
+            if not isinstance(data, dict):
+                raise ValueError("expected a JSON object")
+            cfg.update(data)
+        except Exception as e:
+            cfg["_error"] = f"{type(e).__name__}: {e}"
     return cfg
 
 
 def save_config(patch: dict) -> dict:
     cfg = load_config()
+    if cfg.get("_error"):        # never overwrite a file we could not read (the user may be editing it by hand)
+        raise RuntimeError(f"{config_path()} could not be read ({cfg['_error']}) - fix or delete it first.")
     cfg.update(patch)
     p = config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), "utf-8")
+    p.write_text(json.dumps({k: v for k, v in cfg.items() if not k.startswith("_")}, indent=2, ensure_ascii=False), "utf-8")
     return cfg
+
+
+def has_library(d: str | Path) -> bool:
+    """A data folder that already holds a CutLab library (the engine creates cutlab.db on first start)."""
+    return (Path(d) / "cutlab.db").exists()
+
+
+def _libraries_file() -> Path:
+    return config_path().parent / "libraries.json"     # kept apart from desktop.json, which stays the user's file
+
+
+def remember_library(d: Path) -> None:
+    try:
+        libs = json.loads(_libraries_file().read_text("utf-8"))
+    except Exception:
+        libs = []
+    s = str(d)
+    if not any(same_path(s, x) for x in libs):
+        libs.append(s)
+        try:
+            _libraries_file().parent.mkdir(parents=True, exist_ok=True)
+            _libraries_file().write_text(json.dumps(libs, indent=1, ensure_ascii=False), "utf-8")
+        except OSError:
+            pass
+
+
+def known_libraries(exclude: Path | None = None) -> list[str]:
+    """Data folders that hold a library: ones opened before, the default <checkout>\\data, and data_dir in desktop.json."""
+    try:
+        libs = json.loads(_libraries_file().read_text("utf-8"))
+    except Exception:
+        libs = []
+    cfg = load_config()
+    cands = [*libs, str(ROOT / "data")] + ([cfg["data_dir"]] if cfg.get("data_dir") else [])
+    out: list[str] = []
+    for c in cands:
+        c = os.path.expandvars(str(c))
+        if has_library(c) and not any(same_path(c, x) for x in out) and not (exclude and same_path(c, exclude)):
+            out.append(str(Path(c)))
+    return out
 
 
 def data_dir(cfg: dict | None = None) -> Path:
@@ -95,6 +143,12 @@ def health(base: str, timeout: float = 2.0) -> dict | None:
     """The engine's /api/health if a CutLab engine answers at `base`, else None."""
     h = http_json(f"{base}/api/health", timeout)
     return h if isinstance(h, dict) and "routers" in h else None
+
+
+def serves(h: dict, data: Path) -> bool:
+    """Does the engine behind this /api/health answer for `data`? Engines older than this launcher do not report their
+    folder: then only assume so when `data` is this checkout's default folder (what such an engine would use)."""
+    return same_path(h["data"], data) if h.get("data") else same_path(data, ROOT / "data")
 
 
 def busy_jobs(base: str) -> list[dict]:
@@ -187,11 +241,11 @@ class Engine:
         the preferred port, or to a free one when the preferred port is taken by another program or another CutLab."""
         h = health(f"http://127.0.0.1:{preferred}")
         if h:
-            if not h.get("data") or same_path(h["data"], self.data):
+            if serves(h, self.data):
                 self.port, self.pid, self.owned = preferred, h.get("pid") or pid_on_port(preferred), False
                 self.log(f"attached to running engine on :{preferred} (pid {self.pid})")
                 return "attached"
-            self.log(f"port {preferred}: a CutLab engine with another data folder ({h['data']}) - using a free port")
+            self.log(f"port {preferred}: a CutLab engine with another (or an unreported) data folder ({h.get('data', '?')}) - using a free port")
             self.port = free_port()
         elif port_in_use(preferred):
             self.port = free_port()

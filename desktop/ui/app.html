@@ -69,6 +69,7 @@
     <h1>CutLab</h1>
     <div class="msg" id="s-msg"><span class="spinner"></span><span>Starting…</span></div>
     <div class="dim small" id="s-detail" style="white-space:pre-wrap;margin-top:6px"></div>
+    <div class="hidden" id="s-confirm" style="text-align:left;margin-top:18px"></div>
     <div class="btns hidden" id="s-btns">
       <button class="primary" onclick="post('/api/retry')">Try again</button>
       <button onclick="post('/api/restart-engine')">Restart engine</button>
@@ -163,14 +164,39 @@ async function pollStart() {
   const s = await getState()
   if (s) {
     if (s.phase === 'ready') { location.replace(s.engine_url + '/'); return }
-    const error = s.phase === 'error'
-    $('s-msg').innerHTML = error ? `<span class="err">${esc(s.message)}</span>` : `<span class="spinner"></span><span>${esc(s.message)}</span>`
-    $('s-detail').textContent = s.detail || ''
+    const error = s.phase === 'error', confirm = s.phase === 'confirm' && s.confirm
+    $('s-msg').innerHTML = error ? `<span class="err">${esc(s.message)}</span>`
+      : confirm ? `<b class="warnc">${esc(s.message)}</b>` : `<span class="spinner"></span><span>${esc(s.message)}</span>`
+    $('s-detail').textContent = confirm ? '' : (s.detail || '')
+    renderConfirm(confirm ? s.confirm : null)
     $('s-btns').classList.toggle('hidden', !error)
     const log = $('s-log'); const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4
     log.textContent = s.lines.join('\n'); if (atEnd) log.scrollTop = log.scrollHeight
   }
   setTimeout(pollStart, 500)
+}
+
+let confirmKey = ''
+function renderConfirm(c) {
+  const box = $('s-confirm'), key = c ? JSON.stringify(c) : ''
+  box.classList.toggle('hidden', !c)
+  if (key === confirmKey) return
+  confirmKey = key
+  if (!c) { box.innerHTML = ''; return }
+  let html = c.issues.map((i) => `<div class="note">${esc(i)}</div>`).join('')
+  if (c.libraries.length) {
+    html += '<h2>Existing CutLab libraries on this computer</h2>' + c.libraries.map((l, n) =>
+      `<div class="card row"><span class="mono grow">${esc(l)}</span><button class="primary" data-lib="${n}">Use this library</button></div>`).join('')
+  }
+  html += `<div class="btns left"><button id="c-go">${c.libraries.length ? 'Start with an empty library' : 'Start'}</button>
+    <button onclick="location.href='/settings'">Choose another folder…</button></div>`
+  box.innerHTML = html
+  box.querySelectorAll('[data-lib]').forEach((b) => b.onclick = async () => {
+    b.disabled = true
+    const r = await post('/api/data-dir', { path: c.libraries[+b.dataset.lib] })
+    if (r.error) { b.disabled = false; box.insertAdjacentHTML('afterbegin', `<div class="note err">${esc(r.error)}</div>`) }
+  })
+  $('c-go').onclick = () => { $('c-go').disabled = true; post('/api/continue') }
 }
 
 // ---------------------------------------------------------------- updates

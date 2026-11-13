@@ -27,8 +27,9 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import updater  # noqa: E402
-from engine import (DESKTOP, ICON, NOWIN, ROOT, Engine, app_home, busy_jobs, data_dir, health, load_config,  # noqa: E402
-                    pid_alive, pid_on_port, same_path, save_config)
+from engine import (DESKTOP, ICON, NOWIN, ROOT, Engine, app_home, busy_jobs, config_path, data_dir,  # noqa: E402
+                    has_library, health, known_libraries, load_config, pid_alive, pid_on_port, remember_library,
+                    same_path, save_config, serves)
 
 UI = DESKTOP / "ui"
 APP_ID = "CutLab.Desktop"
@@ -67,6 +68,7 @@ class State:
         self.detail = ""
         self.lines: deque[str] = deque(maxlen=300)
         self.update = {"running": False, "done": False, "ok": False, "error": "", "lines": [], "result": None}
+        self.confirm: dict | None = None    # set while start-up waits for the user to confirm the data folder
 
     def set(self, phase: str, message: str, detail: str = "") -> None:
         with self.lock:
@@ -98,6 +100,8 @@ class App:
         self.relaunch = False
         self.boot_lock = threading.Lock()
         self.op_lock = threading.Lock()      # one at a time: engine restart, update, data-folder change
+        self.confirm_event = threading.Event()
+        self.confirmed_data = ""             # the user said "start with this (empty) folder"
 
     # ---------------------------------------------------------------- start-up
     def boot(self) -> None:
@@ -133,6 +137,28 @@ class App:
             st.set("ready", "Ready")
             return
         how = self.engine.attach_or_pick_port(int(self.cfg.get("port") or 8787))
+        while True:                                  # never open a different (empty) library silently
+            issues = self.data_issues(attached=(how == "attached"))
+            if not issues or self.confirmed_data == str(self.data):
+                break
+            data0 = self.data
+            self.confirm_event.clear()
+            with st.lock:
+                st.confirm = {"issues": issues, "data_dir": str(self.data),
+                              "libraries": known_libraries(exclude=self.data)}
+            st.set("confirm", "Check the data folder before starting", "\n".join(issues))
+            while not self.confirm_event.wait(0.5):
+                if self.quitting or not same_path(self.data, data0):
+                    break
+            with st.lock:
+                st.confirm = None
+            if self.quitting:
+                return
+            if self.confirm_event.is_set() and same_path(self.data, data0):
+                self.confirmed_data = str(self.data)
+                break
+            self.engine = Engine(self.data, st.log)           # another folder was chosen: look again
+            how = self.engine.attach_or_pick_port(int(self.cfg.get("port") or 8787))
         if how == "start":
             st.set("starting", "Starting the engine…", f"data folder: {self.data}")
             self.engine.start({"CUTLAB_DESKTOP_URL": self.control_url})
@@ -141,7 +167,25 @@ class App:
             if not ok:
                 raise RuntimeError("The engine did not answer within 3 minutes.")
         self.write_lock()
+        remember_library(self.data)
+        self.set_title()
         st.set("ready", "Ready")
+
+    def data_issues(self, attached: bool) -> list[str]:
+        out = []
+        if self.cfg.get("_error"):
+            out.append(f"{config_path()} could not be read ({self.cfg['_error']}), so its settings (data folder, port) "
+                       f"are ignored. Fix or delete that file.")
+        if not attached and not has_library(self.data):
+            out.append(f"{self.data} holds no CutLab library yet - starting will create a new, empty one there.")
+        return out
+
+    def set_title(self) -> None:
+        if self.window is not None:
+            try:
+                self.window.set_title(f"CutLab — {self.data}")
+            except Exception:
+                pass
 
     def restart_engine(self) -> None:
         if not self.op_lock.acquire(blocking=False):
@@ -193,7 +237,7 @@ class App:
         """Attach to an engine on our port that serves our data folder (started outside the app)."""
         e = self.engine
         h = health(e.base, 1.5)
-        if not h or (h.get("data") and not same_path(h["data"], self.data)):
+        if not h or not serves(h, self.data):
             return False
         e.proc, e.pid, e.owned = None, h.get("pid") or pid_on_port(e.port), False
         self.state.log(f"engine on :{e.port} was started outside the app - attached to it (pid {e.pid})")
@@ -339,7 +383,7 @@ class App:
         with st.lock:
             return {"phase": st.phase, "message": st.message, "detail": st.detail, "lines": list(st.lines)[-80:],
                     "engine_url": self.engine.base, "owned": self.engine.owned, "data_dir": str(self.data),
-                    "root": str(ROOT), "mode": self.mode, "version": version,
+                    "root": str(ROOT), "mode": self.mode, "version": version, "confirm": st.confirm,
                     "config_path": str(updater.config_path()), "update": dict(st.update, lines=st.update["lines"][-400:])}
 
 
@@ -399,6 +443,9 @@ def make_handler(app: App):
                 if path == "/api/update/apply":
                     err = app.start_update()
                     return self._json({"ok": not err, "error": err}, 200 if not err else 409)
+                if path == "/api/continue":
+                    app.confirm_event.set()
+                    return self._json({"ok": True})
                 if path == "/api/retry":
                     threading.Thread(target=app.boot, daemon=True).start()
                     return self._json({"ok": True})
@@ -430,6 +477,9 @@ def make_handler(app: App):
 def set_data_dir(app: App, path: str) -> dict:
     """Point CutLab at another data folder (saved in desktop.json; existing files are not moved)."""
     path = path.strip().strip('"')
+    if os.environ.get("CUTLAB_DATA"):
+        return {"error": f"The CUTLAB_DATA environment variable ({os.environ['CUTLAB_DATA']}) decides the data folder. "
+                         "Change or remove it instead."}
     if path:
         p = Path(os.path.expandvars(path)).expanduser()
         if not p.is_absolute():
@@ -442,7 +492,10 @@ def set_data_dir(app: App, path: str) -> dict:
         return {"error": f"{len(busy)} job(s) are running - try again when they are done."}
     if app.op_lock.locked():
         return {"error": "The engine is restarting or updating - try again in a moment."}
-    app.cfg = save_config({"data_dir": path})
+    try:
+        app.cfg = save_config({"data_dir": path})
+    except RuntimeError as e:
+        return {"error": str(e)}
     app.data = data_dir(app.cfg)
     app.log(f"data folder set to {app.data}")
     threading.Thread(target=app.restart_engine, daemon=True).start()
@@ -622,7 +675,7 @@ def run_webview(app: App, webview, first_page: str) -> None:
         webview.settings["OPEN_DEVTOOLS_IN_DEBUG"] = False
     except Exception:
         pass
-    win = webview.create_window("CutLab", app.control_url + first_page, width=1440, height=900, min_size=(960, 600),
+    win = webview.create_window(f"CutLab — {app.data}", app.control_url + first_page, width=1440, height=900, min_size=(960, 600),
                                 background_color="#0C0D10", text_select=True)
     app.window = win
     win.events.closing += app.on_closing

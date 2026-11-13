@@ -62,6 +62,9 @@ if ($DataDir) {
 $data = & $py (Join-Path $root "desktop\engine.py") data-dir
 $cfgPath = & $py (Join-Path $root "desktop\engine.py") config-path
 Ok "$data"
+$cfgErr = & $py -c "import sys; sys.path.insert(0, r'$root\desktop'); import engine; print(engine.load_config().get('_error', ''))"
+if ($cfgErr) { Warn "$cfgErr - $cfgPath could not be read, so its data_dir/port are ignored. Fix it (use / or \\ in paths) or delete it." }
+if (-not (Test-Path (Join-Path $data "cutlab.db"))) { Warn "no CutLab library in this folder yet - a new, empty one is created on first start (the app asks first)." }
 Write-Host "         (projects, media, asset hub, animation library, settings + API keys; change with -DataDir or in the app)"
 Write-Host "         launcher config: $cfgPath"
 
