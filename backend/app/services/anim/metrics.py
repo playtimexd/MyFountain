@@ -74,23 +74,40 @@ def pose_checks(names, head, tail) -> dict:
     tol, tor = _find(names, [r"ball|toebase|toe"], "l"), _find(names, [r"ball|toebase|toe"], "r")
     if tol is None or tor is None:
         return out
-    # forward = where the toes point (both feet, horizontal, smoothed over the clip so a single odd frame cannot flip it)
-    fwd = (head[:, tol] - head[:, ftl]) + (head[:, tor] - head[:, ftr])
-    fwd[:, 2] = 0
     k = 9
-    if fwd.shape[0] > k:
-        fwd = np.stack([np.convolve(np.pad(fwd[:, i], (k // 2, k // 2), mode="edge"), np.ones(k) / k, mode="valid") for i in range(3)], 1)
-    fwd = fwd / np.linalg.norm(fwd, axis=1, keepdims=True).clip(1e-6, None)
+
+    def smooth_unit(v):
+        v = v.copy()
+        v[:, 2] = 0
+        if v.shape[0] > k:                                    # smoothed over the clip so a single odd frame cannot flip it
+            v = np.stack([np.convolve(np.pad(v[:, i], (k // 2, k // 2), mode="edge"), np.ones(k) / k, mode="valid") for i in range(3)], 1)
+        return v / np.linalg.norm(v, axis=1, keepdims=True).clip(1e-6, None)
+
+    # body forward = perpendicular to the hip line (left hip - right hip) x up.  It used to be where the toes point, which is
+    # not where the body faces in turns on the spot, pivots or get-ups: the unaltered source of an ALS get-up scored 40
+    # ("torso bends backwards", "knees bend the wrong way") and retargets with twisted feet scored higher
+    left = head[:, thl] - head[:, thr]
+    fwd = smooth_unit(np.stack([left[:, 1], -left[:, 0], np.zeros(len(left))], 1))
     torso = head[:, top] - head[:, pel]
-    lean_back = np.degrees(np.arctan2(-(torso * fwd).sum(1), torso[:, 2].clip(1e-6, None)))
+    # only frames where the body is up: the pelvis at least half a leg above the lower foot and the torso not upside down.
+    # Rolling, lying and getting up (torso horizontal or inverted) read as a 90 deg back bend and "backward" knees - the
+    # checks are about contorted standing poses (an ALS forward roll scored 39 on perfectly normal mocap)
+    leg = float(np.median(np.linalg.norm(head[:, cal] - head[:, thl], axis=1) + np.linalg.norm(head[:, ftl] - head[:, cal], axis=1)))
+    up = ((head[:, pel, 2] - np.minimum(head[:, ftl, 2], head[:, ftr, 2]) > 0.5 * leg) & (torso[:, 2] > 0))
+    if up.sum() < max(3, 0.1 * len(up)):
+        out["pose_upright_frames_pct"] = float(100 * up.mean())
+        return out
+    lean_back = np.degrees(np.arctan2(-(torso * fwd).sum(1), torso[:, 2].clip(1e-6, None)))[up]
     out["torso_back_lean_p90_deg"] = float(np.percentile(lean_back, 90))
+    out["pose_upright_frames_pct"] = float(100 * up.mean())
     h = float(np.ptp(head[..., 2])) or 1.0
     hyper = []
     for th, ca, ft in ((thl, cal, ftl), (thr, car, ftr)):
+        # judged against the body's forward (hip line), not the toes: kneeling / tiptoe feet point backwards or down
         mid = (head[:, th] + head[:, ft]) / 2                 # hip-ankle line (bone tails are unreliable on FBX rigs)
         off = ((head[:, ca] - mid) * fwd).sum(1)          # >0: knee in front of the hip-ankle line (normal)
         hyper.append(-off / h * 100)
-    out["knee_backward_p90_pct_height"] = float(np.percentile(np.max(np.stack(hyper), axis=0), 90))
+    out["knee_backward_p90_pct_height"] = float(np.percentile(np.max(np.stack(hyper), axis=0)[up], 90))
     return out
 
 

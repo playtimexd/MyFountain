@@ -1004,6 +1004,7 @@ def solve(arm, motion, bone_map, opts, ctx_notes):
     lvl_t = np.zeros((T, len(legs)))                     # rig height of the surface each foot is on (0 = the floor)
     foot_floor = np.zeros((T, len(legs)))
     Wm = build_W()
+    W_src = Wm                                           # world rotations before any foot clean-up
     Hd = H.copy()
     # the pelvis covers more than a leg length.  Animation files only: poses estimated from video jitter so much that their
     # planted feet rarely read as still, and the lock (at full weight) is what keeps them planted
@@ -1112,12 +1113,21 @@ def solve(arm, motion, bone_map, opts, ctx_notes):
                 ov[M_] = nrm(nrm(E0 - K0) * (1 - ws[:, None]) + nrm(E1 - K1) * ws[:, None])
             Wm = build_W(ov)
             flags.append("foot_lock")
-        # flat feet while planted (yaw of the pelvis, rest orientation otherwise)
-        fwd_cur = np.einsum("tij,j->ti", Wm[pelvis_b] @ rig.R[pelvis_b].T, np.append(fwd_rest, 0.0))
-        yaw_t = np.arctan2(fwd_cur[:, 1], fwd_cur[:, 0]) - math.atan2(fwd_rest[1], fwd_rest[0])
+        # flat feet while planted: level the foot at one heading per contact - the foot's own heading in the source for
+        # direct transfers (the pelvis's said "forward" with an offset when the source skeleton's pelvis axes differ from
+        # the rig's: ALS (UE4 mannequin) turns on the spot had both feet ~135 deg off the body), the pelvis's for solved
+        # feet (too noisy).  Headings are unwrapped (a turn crossing +-180 deg took the median of [-170 .. +170]); frames
+        # whose bone points up or down (lying, getting up) have no heading and are bridged.
+        def heading(R_world, b):
+            f = np.einsum("tij,j->ti", R_world @ rig.R[b].T, np.append(fwd_rest, 0.0))
+            a = np.arctan2(f[:, 1], f[:, 0]) - math.atan2(fwd_rest[1], fwd_rest[0])
+            ok = np.linalg.norm(f[:, :2], axis=1) > 0.5
+            return np.interp(np.arange(T), np.flatnonzero(ok), np.unwrap(a[ok])) if ok.any() and not ok.all() else np.unwrap(a)
+        yaw_pel = heading(Wm[pelvis_b], pelvis_b)
         for k, l in enumerate(legs):
             c = contacts[:, k]
             ws = 0.4 + 0.6 * soft_mask(c, max(2, int(round(0.08 * fps))))
+            yaw_t = heading(W_src[l["F"]], l["F"]) if direct is not None else yaw_pel
             yk = yaw_t.copy()
             t = 0
             while t < T:                                   # a planted foot keeps one heading for the whole contact
@@ -1125,7 +1135,14 @@ def solve(arm, motion, bone_map, opts, ctx_notes):
                     t2 = t
                     while t2 + 1 < T and c[t2 + 1]:
                         t2 += 1
-                    yk[t:t2 + 1] = np.median(yaw_t[t:t2 + 1])
+                    seg = yaw_t[t:t2 + 1]
+                    if len(seg) > 0.8 * T and np.ptp(seg) > math.radians(20.0):
+                        # the feet never lift (a shuffling turn on the spot: one contact for the whole clip) - follow the
+                        # turn.  Not for ordinary contacts: a running pivot turns on the ball, and turning the foot about
+                        # the ankle slid the toes
+                        yk[t:t2 + 1] = sg_smooth(seg[:, None], max(3, int(round(0.2 * fps)) | 1), 2, 0)[:, 0]
+                    else:
+                        yk[t:t2 + 1] = np.median(seg)
                     t = t2 + 1
                 else:
                     t += 1
